@@ -1,0 +1,19 @@
+# rendered figures; regenerate with the scripts
+figures/
+
+# python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# conda / env
+.conda/
+*.egg-info/
+
+# os
+.DS_Store
+
+# git
+*.patch
+*.bundle
+
