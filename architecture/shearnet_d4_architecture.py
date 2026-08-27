@@ -32,6 +32,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.colors import LogNorm
 from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch, Polygon
 
 # --------------------------------------------------------------------------
@@ -83,40 +84,48 @@ def set_style(usetex: bool = False) -> None:
 
 
 # --------------------------------------------------------------------------
-# Synthetic stamps (illustrative renders of what the network ingests)
+# Input stamps
 # --------------------------------------------------------------------------
 
 
-def galaxy_stamp(n: int = 48, seed: int = 7) -> np.ndarray:
-    """A sheared, off-axis exponential galaxy with faint pixel noise.
+def load_stamps() -> tuple[np.ndarray, np.ndarray]:
+    """Load the real galaxy and PSF stamps used in the architecture figure.
 
-    A deliberately *asymmetric* off-centre knot is added on top of the smooth
-    profile. A pure ellipse is invariant under a 180-degree rotation, so without
-    the knot the eight orbit thumbnails would collapse into four identical-looking
-    pairs and the figure would read as a bug; the knot makes every element of the
-    orbit visually distinct.
+    The expected project layout is::
+
+        architecture/
+        |-- shearnet_d4_architecture.py
+        `-- stamps/
+            `-- single_stamp.npz
+
+    A couple of fallbacks are included so the script is also easy to test in an
+    ad hoc environment.
     """
-    rng = np.random.default_rng(seed)
-    g = np.linspace(-2.6, 2.6, n)
-    xx, yy = np.meshgrid(g, g)
-    th = np.deg2rad(33.0)
-    a = np.cos(th) * xx + np.sin(th) * yy
-    b = -np.sin(th) * xx + np.cos(th) * yy
-    r = np.sqrt((a / 1.5) ** 2 + (b / 0.66) ** 2 + 0.02)
-    img = np.exp(-1.9 * r)
-    # asymmetric star-forming knot, offset along the major axis
-    img += 0.55 * np.exp(-(((a - 0.95) / 0.30) ** 2 + ((b - 0.16) / 0.26) ** 2))
-    img += 0.030 * rng.standard_normal((n, n))
-    return np.clip(img, 0, None)
+    candidates = [
+        Path(__file__).resolve().parent / "stamps" / "single_stamp.npz",
+        Path(__file__).resolve().parent / "single_stamp.npz",
+        Path("/mnt/data/single_stamp.npz"),
+    ]
+    stamp_path = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if stamp_path is None:
+        tried = "\n  - ".join(str(candidate) for candidate in candidates)
+        raise FileNotFoundError("stamp file not found. Tried:\n  - " + tried)
 
+    with np.load(stamp_path) as data:
+        missing = {"galaxy", "psf"} - set(data.files)
+        if missing:
+            raise KeyError(
+                f"{stamp_path} is missing required array(s): {sorted(missing)}"
+            )
+        galaxy = np.asarray(data["galaxy"])
+        psf = np.asarray(data["psf"])
 
-def psf_stamp(n: int = 48, seed: int = 3) -> np.ndarray:
-    """A compact, slightly anisotropic PSF core with a faint halo."""
-    g = np.linspace(-2.6, 2.6, n)
-    xx, yy = np.meshgrid(g, g)
-    core = np.exp(-((xx / 0.52) ** 2 + (yy / 0.46) ** 2))
-    halo = 0.18 * np.exp(-((xx / 1.5) ** 2 + (yy / 1.4) ** 2))
-    return core + halo
+    if galaxy.ndim != 2 or psf.ndim != 2:
+        raise ValueError(
+            f"expected 2-D stamps, got galaxy {galaxy.shape} and PSF {psf.shape}"
+        )
+
+    return galaxy, psf
 
 
 def d4_apply(img: np.ndarray, i: int) -> np.ndarray:
@@ -187,11 +196,11 @@ def arrow(ax, p0, p1, color=None, lw=1.5, ls="-", rad=0.0, zorder=5, ms=10):
     )
 
 
-def imstamp(ax, cx, cy, size, img, cmap, border=None, lw=1.0, zorder=4):
+def imstamp(ax, cx, cy, size, img, cmap, norm=None, border=None, lw=1.0, zorder=4):
     """Draw an image centred at (cx, cy) with a crisp border."""
     ax.imshow(
         img, extent=(cx - size / 2, cx + size / 2, cy - size / 2, cy + size / 2),
-        cmap=cmap, zorder=zorder, interpolation="bilinear", aspect="auto",
+        cmap=cmap, norm=norm, zorder=zorder, interpolation="bilinear", aspect="auto",
     )
     ax.add_patch(
         plt.Rectangle((cx - size / 2, cy - size / 2), size, size, facecolor="none",
@@ -241,8 +250,11 @@ def build_figure(figsize=(19.0, 8.9)):
     ax.set_ylim(9.0, 73.5)
     ax.axis("off")
 
-    gal = galaxy_stamp()
-    psf = psf_stamp()
+    gal, psf = load_stamps()
+    positive_psf = psf[psf > 0]
+    if positive_psf.size == 0:
+        raise ValueError("PSF stamp must contain at least one positive pixel for log scaling")
+    psf_norm = LogNorm(vmin=float(positive_psf.min()), vmax=float(psf.max()))
 
     Y_TOP, Y_BOT = 72.0, 10.5      # stage extents
     Y_G, Y_P = 52.0, 22.0          # galaxy / PSF branch centre lines
@@ -250,10 +262,10 @@ def build_figure(figsize=(19.0, 8.9)):
 
     # ================= stage 1: inputs =================
     stage(ax, 1, 20, Y_BOT, Y_TOP, "Inputs", C["stage_in"])
-    imstamp(ax, 10.5, Y_G, 11.0, gal, "magma")
+    imstamp(ax, 10.5, Y_G, 11.0, gal, "viridis")
     ax.text(10.5, Y_G + 7.6, "galaxy", ha="center", fontsize=F["block"],
             color=C["galaxy"], fontweight="bold")
-    imstamp(ax, 10.5, Y_P, 11.0, psf, "cividis")
+    imstamp(ax, 10.5, Y_P, 11.0, psf, "viridis", norm=psf_norm)
     ax.text(10.5, Y_P + 7.6, "PSF", ha="center", fontsize=F["block"],
             color=C["psf"], fontweight="bold")
     ax.text(10.5, 14.6, r"$53\times53$ px", ha="center", fontsize=F["tag"],
@@ -269,7 +281,7 @@ def build_figure(figsize=(19.0, 8.9)):
     for i in range(8):
         r_i, m_i = i % 4, i // 4
         cx, cy = cols[r_i], grows[m_i]
-        imstamp(ax, cx, cy, tsz, d4_apply(gal, i), "magma", lw=0.8)
+        imstamp(ax, cx, cy, tsz, d4_apply(gal, i), "viridis", lw=0.8)
         ax.text(cx, cy - tsz / 2 - 1.35, ORBIT_LABELS[i], ha="center",
                 fontsize=F["tiny"], color=C["text"])
         # spin-2 weights this orbit member carries into the Reynolds average
@@ -279,7 +291,7 @@ def build_figure(figsize=(19.0, 8.9)):
     # the SAME eight elements act on the PSF stamp, in lock-step with the galaxy
     for i in range(8):
         cx = 27.4 + i * 4.3
-        imstamp(ax, cx, 25.5, psz, d4_apply(psf, i), "cividis", lw=0.6)
+        imstamp(ax, cx, 25.5, psz, d4_apply(psf, i), "viridis", norm=psf_norm, lw=0.6)
     ax.text(42.0, 30.4, r"the same $g_i$ acts on the PSF stamp, in lock-step",
             ha="center", fontsize=F["tag"], color=C["muted"], style="italic")
 
