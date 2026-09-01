@@ -17,3 +17,5 @@ __pycache__/
 *.patch
 *.bundle
 
+# temporary hold out on huge files
+*.fits
