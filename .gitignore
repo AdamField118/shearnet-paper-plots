@@ -13,6 +13,10 @@ __pycache__/
 # os
 .DS_Store
 
+# cached PSF moment maps, derived deterministically from a .psf model,
+# regenerate with psf/psf_properties.py rather than committing
+psf/maps/
+
 # git
 *.patch
 *.bundle
