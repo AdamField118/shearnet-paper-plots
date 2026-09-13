@@ -68,6 +68,16 @@ def _pair(rng, n, sign, shear, m1, c2, alpha, beta, gpsf, tpsf, sigma_e):
     for est in ESTIMATORS:
         col[f"Rbarpsf_{est}_metacal"] = np.broadcast_to(
             np.eye(2) * 0.27, (n, 2, 2)).copy()
+    # ngmix's own noshear fit quantities, unsuffixed by ring station exactly as
+    # run.py writes them. selection.superbit_mask reads these three, so without
+    # them the sample cut cannot be exercised against the schema at all. T is
+    # tied to hlr_th so the cut removes the small end, and a handful of failed
+    # fits are given the negative T the real files contain.
+    T = 2.0 * col["hlr_th"] ** 2
+    T[rng.random(n) < 0.02] = -0.5
+    col["T_ngmix"] = T
+    col["s2n_ngmix"] = col["s2n"]
+    col["flux_ngmix"] = col["flux_th"]
     return col
 
 
