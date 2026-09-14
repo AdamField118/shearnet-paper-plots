@@ -105,3 +105,42 @@ def test_the_cut_reaches_every_deliverable_that_takes_one(tmp_path):
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash absent")
 def test_the_driver_is_syntactically_valid():
     assert subprocess.run(["bash", "-n", str(SCRIPT)]).returncode == 0
+
+
+def test_no_function_local_import_shadows_a_module_level_one():
+    """An import inside a branch makes the name local to the WHOLE function.
+
+    ``psf_leakage.main`` imported ``tempfile`` inside the ``--compare-shapes``
+    branch while the module already imported it at the top. Python then treats
+    ``tempfile`` as local everywhere in ``main``, so the use on the ordinary
+    path -- a different line, in a branch that never runs the import -- raised
+    UnboundLocalError on every normal invocation. The fix is one line, and it
+    survived a round of being applied upstream without landing, so it is worth
+    a test rather than a memory.
+    """
+    import ast
+
+    problems = []
+    for source in sorted((REPO / "results").glob("*.py")):
+        tree = ast.parse(source.read_text())
+        top_level = {
+            alias.asname or alias.name.split(".")[0]
+            for node in tree.body
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+            for alias in node.names
+        }
+        for function in [n for n in ast.walk(tree)
+                         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]:
+            for node in ast.walk(function):
+                if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                    continue
+                for alias in node.names:
+                    name = alias.asname or alias.name.split(".")[0]
+                    if name in top_level:
+                        problems.append(
+                            f"{source.name}:{node.lineno}: {function.name}() "
+                            f"re-imports {name!r}, which is already imported at "
+                            "module scope -- this makes it local to the whole "
+                            "function and breaks every other use of it"
+                        )
+    assert not problems, "\n".join(problems)

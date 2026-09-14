@@ -157,8 +157,10 @@ def main(argv=None):
     ev = Evaluation(args.fits)
 
     if args.compare_shapes:
-        import tempfile
-
+        # tempfile is imported at module scope. Importing it again HERE makes
+        # the name local to the whole of main(), so the use on the NORMAL path
+        # (the TemporaryDirectory further down) raises UnboundLocalError
+        # whenever this branch is not taken -- which is every ordinary run.
         with tempfile.TemporaryDirectory() as scratch:
             for estimator in (args.estimators or ev.leakage_estimators()):
                 print(f"\n{estimator}")
