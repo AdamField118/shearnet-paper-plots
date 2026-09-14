@@ -32,6 +32,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import re
+
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table
@@ -119,42 +121,119 @@ class Evaluation:
             if self._leakage_shape_col(e, cols) and f"Rpsf_{e}_metacal" in cols
         ]
 
+    #: Each named shape, as the three independent choices it actually is.
+    #:
+    #:   source  which image the shape was measured on
+    #:             "raw"      the ORIGINAL image; metacal never touched it
+    #:             "noshear"  metacal's reconvolved image, no artificial shear
+    #:   rpsf    Rbar^PSF @ e_PSF subtracted
+    #:   rgamma  divided by the ensemble <R^gamma>
+    #:
+    #: The names say WHICH corrections are in. "corrected" and "calibrated"
+    #: did not distinguish two different corrections, which is how a leakage
+    #: carrying only R^PSF and one carrying both ended up looking like the same
+    #: number under two spellings.
+    LEAKAGE_SHAPES = {
+        "raw": dict(source="raw", rpsf=False, rgamma=False),
+        "raw_rgamma": dict(source="raw", rpsf=False, rgamma=True),
+        "noshear": dict(source="noshear", rpsf=False, rgamma=False),
+        "noshear_rgamma": dict(source="noshear", rpsf=False, rgamma=True),
+        "noshear_rpsf": dict(source="noshear", rpsf=True, rgamma=False),
+        "noshear_rgamma_rpsf": dict(source="noshear", rpsf=True, rgamma=True),
+    }
+
+    #: (source, rpsf) -> the columns run.py actually writes, best first.
+    #:
+    #: run.py's names INVERT the metacal convention: it calls metacal's noshear
+    #: measurement ``e_<est>_raw`` and the genuinely raw measurement
+    #: ``e_<est>_original``. The FITS cannot be renamed without re-running every
+    #: evaluation, so the mapping is stated once here and everything above this
+    #: line speaks the standard vocabulary.
+    COLUMNS_BY_SOURCE = {
+        ("raw", False): ("e_{est}_original",),
+        ("noshear", False): ("e_{est}_raw_ring", "e_{est}_metacal_raw_ring",
+                             "e_{est}_raw"),
+        ("noshear", True): ("e_{est}_ring", "e_{est}_metacal_corrected_ring",
+                            "e_{est}"),
+    }
+
     @staticmethod
     def _leakage_shape_col(estimator: str, cols) -> str | None:
-        """Pick the galaxy-shape column the leakage panels should read.
-
-        ``e_<est>_raw_ring`` is the ring-averaged raw shape and is what the
-        ShearNet config documents as the column for the leakage panels and the
-        alpha-vs-size regression: the ring average cancels intrinsic ellipticity,
-        and *raw* keeps the PSF-response correction out, since that correction is
-        exactly the thing the leakage slope is measuring. Fall back to the
-        non-ring column when the run had ``shape_noise_cancel`` off.
-        """
-        for candidate in (f"e_{estimator}_raw_ring", f"e_{estimator}_raw"):
+        """Whether this file has any usable leakage shape for an estimator."""
+        for candidate in (f"e_{estimator}_raw_ring", f"e_{estimator}_raw",
+                          f"e_{estimator}_original"):
             if candidate in cols:
                 return candidate
         return None
 
-    def leakage_inputs(self, estimator: str) -> dict:
-        """Arrays needed by ``superbit_lensing``'s PSF-leakage panel maker.
+    @staticmethod
+    def _ring_stations(cols, base: str) -> list:
+        """Ring-station column names for one base, '' included, sorted."""
+        pattern = re.compile(rf"^{re.escape(base)}(_r\d+)?$")
+        return [name for name in sorted(cols) if pattern.match(name)]
 
+    def leakage_inputs(self, estimator: str, shape: str = "raw") -> dict:
+        """Arrays for ``superbit_lensing``'s PSF-leakage panel maker.
+
+        ``shape`` names an entry of :data:`LEAKAGE_SHAPES`, which says which
+        image the measurement came from and which corrections are applied.
         Returns ``e1_gal``, ``e2_gal``, ``e1_psf``, ``e2_psf``, ``r11_psf``,
         ``r22_psf`` plus ``Tpsf`` and ``s2n``, with non-finite rows dropped.
         """
+        if shape not in self.LEAKAGE_SHAPES:
+            raise ValueError(f"shape must be one of {sorted(self.LEAKAGE_SHAPES)}, "
+                             f"got {shape!r}")
+        spec = self.LEAKAGE_SHAPES[shape]
         tab = self.leakage
         cols = set(tab.colnames)
 
-        shape_col = self._leakage_shape_col(estimator, cols)
-        if shape_col is None:
+        candidates = [c.format(est=estimator)
+                      for c in self.COLUMNS_BY_SOURCE[(spec["source"], spec["rpsf"])]]
+        e_gal = shape_col = None
+        for candidate in candidates:
+            # The ring average comes FIRST. run.py writes no _ring column for
+            # the raw measurement, only one per station, and the bare name is
+            # the UNROTATED station -- matching it exactly would fit a single
+            # station and leave the intrinsic ellipticity in, which is the one
+            # thing the ring exists to remove.
+            stations = self._ring_stations(cols, candidate)
+            if len(stations) > 1:
+                e_gal = np.stack([np.asarray(tab[n], dtype=float)
+                                  for n in stations]).mean(axis=0)
+                shape_col = f"{candidate} (ring of {len(stations)})"
+                break
+            if candidate in cols:
+                e_gal = np.asarray(tab[candidate], dtype=float)
+                shape_col = candidate
+                break
+        if e_gal is None:
             raise KeyError(
-                f"LEAKAGE has no shape column for {estimator!r}; "
-                f"looked for e_{estimator}_raw_ring and e_{estimator}_raw"
+                f"LEAKAGE has no {shape!r} shape for {estimator!r}; looked for "
+                + ", ".join(candidates)
             )
+
         rpsf_col = f"Rpsf_{estimator}_metacal"
         if rpsf_col not in cols:
             raise KeyError(f"LEAKAGE has no {rpsf_col} column")
 
-        e_gal = np.asarray(tab[shape_col], dtype=float)
+        r_gamma = None
+        if spec["rgamma"]:
+            # The shear response calibrates the estimator, so it rescales the
+            # leakage slope too: alpha of e/<R> is alpha(e)/<R>. ENSEMBLE
+            # response, from SUMMARY -- dividing per object would inject the
+            # finite-difference noise the harness keeps out of the shape.
+            row = self.summary_row(estimator, "metacal", component=0)
+            if row is None:
+                raise KeyError(
+                    f"SUMMARY has no ({estimator!r}, 'metacal') row, so "
+                    "<R^gamma> is unavailable for this shape"
+                )
+            r_gamma = (float(row["R11"]), float(row["R22"]))
+            if not all(np.isfinite(r_gamma)) or 0.0 in r_gamma:
+                raise KeyError(f"<R^gamma> for {estimator!r} is {r_gamma}")
+            e_gal = e_gal / np.asarray(r_gamma, dtype=float)
+            shape_col += f" / <R^gamma>=({r_gamma[0]:.4f},{r_gamma[1]:.4f})"
+
         gpsf = np.asarray(tab["gpsf"], dtype=float)
         rpsf = np.asarray(tab[rpsf_col], dtype=float)
 
@@ -165,6 +244,8 @@ class Evaluation:
             "Tpsf": np.asarray(tab["Tpsf"], dtype=float),
             "s2n": np.asarray(tab["s2n"], dtype=float),
             "shape_column": shape_col,
+            "shape": shape,
+            "r_gamma": r_gamma,
         }
 
         finite = np.ones(len(e_gal), dtype=bool)

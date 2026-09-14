@@ -77,7 +77,40 @@ def cell(numbers: dict, column: str) -> str:
     return f"${body}$"
 
 
-def build_table(spec: dict, root: Path, njack: int = 20):
+def _mask_for(evaluation, cut, args):
+    """The sample mask for one run, or None when no cut is asked for."""
+    if cut == "none":
+        return None
+    import numpy as np
+
+    from paper_numbers import _pair_tables
+    from selection import paired_mask
+
+    plus, minus = _pair_tables(evaluation, component=0)
+    mask = np.ones(len(plus), dtype=bool)
+    if cut in ("truth", "both"):
+        mask &= paired_mask(plus, minus, "truth", min_hlr=args.min_hlr,
+                            min_resolution=args.min_resolution,
+                            psf_fwhm=args.psf_fwhm, quiet=True)
+    if cut in ("superbit", "both"):
+        mask &= paired_mask(plus, minus, "superbit", quiet=True)
+    return mask
+
+
+def _corrections_from(args) -> dict:
+    """``{estimator: correction}`` from repeated --correction est=corr."""
+    from paper_numbers import REPORTED_CORRECTION
+
+    chosen = dict(REPORTED_CORRECTION)
+    for item in (getattr(args, "correction", None) or []):
+        if "=" not in item:
+            raise SystemExit(f"--correction wants est=corr, got {item!r}")
+        estimator, correction = item.split("=", 1)
+        chosen[estimator] = correction
+    return chosen
+
+
+def build_table(spec: dict, root: Path, njack: int = 20, cut="none", args=None):
     """``(latex_lines, missing_run_names)`` for one table."""
     lines, missing, cache = [], [], {}
     for name, label in spec["rows"]:
@@ -92,8 +125,16 @@ def build_table(spec: dict, root: Path, njack: int = 20):
             continue
         if name not in cache:
             evaluation = Evaluation(path)
-            cache[name] = {est: run_numbers(evaluation, est, njack=njack)
-                           for est in spec["estimators"]}
+            mask = _mask_for(evaluation, cut, args)
+            if mask is not None:
+                print(f"% {name}: {int(mask.sum())} of {len(mask)} objects "
+                      f"survive the {cut} cut")
+            chosen = _corrections_from(args)
+            cache[name] = {
+                est: run_numbers(evaluation, est, njack=njack, mask=mask,
+                                 correction=chosen.get(est))
+                for est in spec["estimators"]
+            }
         cells = [cell(cache[name][est], column)
                  for est in spec["estimators"] for column in spec["columns"]]
         lines.append(f"{label} & " + " & ".join(cells) + r" \\")
@@ -109,9 +150,48 @@ def main(argv=None) -> int:
     parser.add_argument("--status", action="store_true",
                         help="only report which runs are present")
     parser.add_argument("--njack", type=int, default=20)
+    # The same cut every other deliverable takes. Without it this table reads
+    # SUMMARY, computed over the whole rendered population, and the paper ends
+    # up quoting two different samples.
+    parser.add_argument("--cut", choices=("none", "superbit", "truth", "both"),
+                        default="none")
+    parser.add_argument("--min-hlr", type=float, default=None)
+    parser.add_argument("--min-resolution", type=float, default=None)
+    parser.add_argument("--psf-fwhm", type=float, default=0.5)
+    parser.add_argument("--correction", action="append", metavar="EST=CORR",
+                        help="which correction an estimator is reported under, "
+                             "e.g. --correction shearnet=sim. Repeatable.")
+    parser.add_argument("--compare-corrections", action="store_true",
+                        help="print m1 under every available correction and "
+                             "stop; the evidence for choosing one")
     args = parser.parse_args(argv)
 
     wanted = [args.table] if args.table else sorted(TABLES)
+
+    if args.compare_corrections:
+        from paper_numbers import m1_under_every_correction
+
+        for name, _ in TABLES["unit-test-bias"]["rows"]:
+            if name is None:
+                continue
+            path = find_run(args.runs, name)
+            if path is None:
+                continue
+            evaluation = Evaluation(path)
+            mask = _mask_for(evaluation, args.cut, args)
+            print(f"\n{name}  (cut: {args.cut}"
+                  + (f", {int(mask.sum())} of {len(mask)}" if mask is not None else "")
+                  + ")")
+            for est in ("shearnet", "ngmix"):
+                for correction, value in m1_under_every_correction(
+                        evaluation, est, njack=args.njack, mask=mask).items():
+                    m, err = value
+                    if m is None:
+                        print(f"  {est:<9} {correction:<9} unavailable")
+                    else:
+                        print(f"  {est:<9} {correction:<9} "
+                              f"m1 = {m * 1e3:+8.2f} +/- {err * 1e3:.2f}  (1e-3)")
+        return 0
 
     if args.status:
         every = {name for key in TABLES for name, _ in TABLES[key]["rows"] if name}
@@ -127,8 +207,19 @@ def main(argv=None) -> int:
 
     for key in wanted:
         spec = TABLES[key]
-        lines, missing = build_table(spec, args.runs, njack=args.njack)
+        lines, missing = build_table(spec, args.runs, njack=args.njack,
+                                     cut=args.cut, args=args)
         print(f"% {spec['caption']}")
+        chosen = _corrections_from(args)
+        from paper_numbers import LEAKAGE_SHAPE_BY_CORRECTION as _LS
+
+        print("% corrections: " + ", ".join(
+            f"{est} -> {chosen.get(est)} (alpha on the "
+            f"{_LS.get(chosen.get(est), 'raw')} shape)"
+            for est in spec["estimators"]))
+        print(f"% sample cut: {args.cut}"
+              + ("  (m1 recomputed from the per-object columns, not SUMMARY)"
+                 if args.cut != "none" else "  (m1 from SUMMARY)"))
         print(f"% columns: " + ", ".join(
             f"{est} {col}" for est in spec["estimators"] for col in spec["columns"]))
         if missing:

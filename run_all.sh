@@ -23,6 +23,7 @@ FITS=""
 RUNS=""
 OUTDIR="$ROOT/output"
 CUT_ARGS=()
+TABLE_ARGS=()
 
 usage() {
     sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -47,20 +48,50 @@ directly.
 USAGE
 }
 
+# Each deliverable runs with its own directory as the working directory, so a
+# path given relative to where YOU invoked this would resolve against results/
+# instead. Everything a script receives is made absolute here, once.
+abspath() {
+    case "$1" in
+        /*) printf '%s\n' "$1" ;;
+        *)  printf '%s\n' "$PWD/$1" ;;
+    esac
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --go) GO=1; shift ;;
-        --fits) FITS="$2"; shift 2 ;;
-        --runs) RUNS="$2"; shift 2 ;;
-        --out) OUTDIR="$2"; shift 2 ;;
+        --fits) FITS="$(abspath "$2")"; shift 2 ;;
+        --runs) RUNS="$(abspath "$2")"; shift 2 ;;
+        --out) OUTDIR="$(abspath "$2")"; shift 2 ;;
         --cut) CUT_ARGS+=(--cut "$2"); shift 2 ;;
         --min-resolution) CUT_ARGS+=(--min-resolution "$2"); shift 2 ;;
         --min-hlr) CUT_ARGS+=(--min-hlr "$2"); shift 2 ;;
         --psf-fwhm) CUT_ARGS+=(--psf-fwhm "$2"); shift 2 ;;
+        --correction) TABLE_ARGS+=(--correction "$2"); shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
     esac
 done
+
+# Check the inputs before running anything. Seven scripts each raising the same
+# FileNotFoundError is seven tracebacks describing one typo, with the only
+# useful part -- which path, and what is actually there -- buried in the last.
+if [[ -n "$FITS" && ! -f "$FITS" ]]; then
+    echo "--fits does not exist: $FITS" >&2
+    parent="$(dirname "$FITS")"
+    if [[ -d "$parent" ]]; then
+        echo "FITS files in $parent:" >&2
+        find -L "$parent" -maxdepth 1 -name "*.fits" -printf '  %f\n' 2>/dev/null | sort >&2
+    else
+        echo "  (its directory does not exist either)" >&2
+    fi
+    exit 1
+fi
+if [[ -n "$RUNS" && ! -d "$RUNS" ]]; then
+    echo "--runs is not a directory: $RUNS" >&2
+    exit 1
+fi
 
 echo "--- what the paper asks for ---"
 python "$ROOT/results/paper_manifest.py" ${RUNS:+--runs "$RUNS"} | tail -n 2
@@ -71,7 +102,7 @@ DELIVERABLES=(
     "tab:response-diag|results|response_diagnostics.py|--out $OUTDIR/tab_response_diag.tex|cut"
     "tab:timing|results|timing_table.py|--out $OUTDIR/tab_timing.tex|"
     "fig:psf_leakage|results|psf_leakage.py||"
-    "fig:snr_size|results|snr_size_dependence.py||"
+    "fig:snr_size|results|snr_size_dependence.py||cut"
     "fig:prediction-residuals|results|prediction_residuals.py|--out $OUTDIR/prediction_residuals.pdf|cut"
     "fig:response_snr|results|response_vs_snr.py|--out $OUTDIR/response_vs_snr.pdf|cut"
 )
@@ -119,7 +150,14 @@ fi
 # tab:unit-test-bias spans the four rungs, so it takes a directory of runs
 # rather than one file.
 if [[ -n "$RUNS" ]]; then
-    run "tab:unit-test-bias" "results" "paper_tables.py" --runs "$RUNS"
+    tb_args=(--runs "$RUNS")
+    # The same cut and corrections as every other deliverable. Without them
+    # this table reads SUMMARY over the whole population and reports both
+    # estimators through metacal, which is neither the sample nor the pipeline
+    # the rest of the paper uses.
+    [[ ${#CUT_ARGS[@]} -gt 0 ]] && tb_args+=("${CUT_ARGS[@]}")
+    [[ ${#TABLE_ARGS[@]} -gt 0 ]] && tb_args+=("${TABLE_ARGS[@]}")
+    run "tab:unit-test-bias" "results" "paper_tables.py" "${tb_args[@]}"
 else
     echo "  (no --runs given; skipping tab:unit-test-bias)"
 fi

@@ -68,7 +68,7 @@ def _import_superbit():
 
 
 def panel_fits_for(evaluation, estimator, out_fits, *, nbin=10, min_count=20,
-                   njac=30):
+                   njac=30, shape="raw"):
     """Build superbit panel data for one estimator and write its panel FITS.
 
     Returns the fitted ``(alpha1, alpha1_err, alpha2, alpha2_err)``, which is the
@@ -76,7 +76,7 @@ def panel_fits_for(evaluation, estimator, out_fits, *, nbin=10, min_count=20,
     """
     PSFLeakagePanelMaker, save_all_panels_to_fits, _ = _import_superbit()
 
-    data = evaluation.leakage_inputs(estimator)
+    data = evaluation.leakage_inputs(estimator, shape=shape)
     if data["n_dropped"]:
         print(f"  {estimator}: dropped {data['n_dropped']} non-finite rows")
 
@@ -141,9 +141,42 @@ def main(argv=None):
                    help="output stem. Default ../figures/psf_leakage")
     p.add_argument("--format", nargs="+", default=["pdf", "png"])
     p.add_argument("--dpi", type=int, default=300)
+    p.add_argument("--shape", default="raw",
+                   choices=("raw", "raw_rgamma", "noshear", "noshear_rgamma",
+                            "noshear_rpsf", "noshear_rgamma_rpsf"),
+                   help="which measurement to fit, named by the corrections it "
+                        "carries. raw = the original image, metacal never "
+                        "touched it. noshear = metacal's reconvolved image. "
+                        "_rgamma = divided by <R^gamma>. _rpsf = Rbar^PSF "
+                        "subtracted.")
+    p.add_argument("--compare-shapes", action="store_true",
+                   help="print alpha for every shape and stop, so the effect of "
+                        "each correction is visible rather than argued")
     args = p.parse_args(argv)
 
     ev = Evaluation(args.fits)
+
+    if args.compare_shapes:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as scratch:
+            for estimator in (args.estimators or ev.leakage_estimators()):
+                print(f"\n{estimator}")
+                for shape in Evaluation.LEAKAGE_SHAPES:
+                    try:
+                        data = ev.leakage_inputs(estimator, shape=shape)
+                        a1, a1e, a2, a2e = panel_fits_for(
+                            ev, estimator,
+                            os.path.join(scratch, f"{estimator}_{shape}.fits"),
+                            nbin=args.nbin, min_count=args.min_count,
+                            njac=args.njac, shape=shape)
+                        print(f"  {shape:<20} alpha1 = {a1:+.5f} +/- {a1e:.5f}   "
+                              f"alpha2 = {a2:+.5f} +/- {a2e:.5f}\n"
+                              f"  {'':<20} [{data['shape_column']}]")
+                    except Exception as exc:
+                        print(f"  {shape:<20} unavailable: "
+                              f"{type(exc).__name__}: {exc}")
+        return
     print(ev)
 
     available = ev.leakage_estimators()
@@ -184,6 +217,7 @@ def main(argv=None):
             a1, a1e, a2, a2e = panel_fits_for(
                 ev, estimator, out_fits,
                 nbin=args.nbin, min_count=args.min_count, njac=args.njac,
+                shape=args.shape,
             )
             print(f"  {DISPLAY_NAME.get(estimator, estimator)}: "
                   f"alpha1 = {a1:+.4f} +/- {a1e:.4f}, "

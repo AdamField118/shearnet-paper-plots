@@ -49,12 +49,67 @@ DEFAULT_NJACK = 20
 #: 'metacal' because the fiducial config sets shearnet_metacal: true, so both
 #: estimators measure the same nine reconvolved products and both divide by
 #: their own metacal R^gamma.
-REPORTED_CORRECTION = {"shearnet": "metacal", "ngmix": "metacal", "anacal": "anacal"}
+#: How each estimator is reported -- a SCIENTIFIC choice, not an inherited
+#: default.
+#:
+#: ShearNet is reported on the RAW image -- metacal never touching it -- but
+#: DIVIDED BY ITS SHEAR RESPONSE. On the uncut UT4 sample that response is
+#: 0.907, not the 0.99 measured on the resolution-cut sample, so "no correction
+#: at all" is not an option here: it reports m = -85e-3 where the same shape
+#: over R^gamma reports +8.4e-3. What ShearNet does not need is metacal's
+#: deconvolve/reconvolve, which measurably degrades it (leakage 0.95e-2 ->
+#: 2.1e-2) and whose R^PSF term is separately broken.
+#:
+#: ngmix is reported through the full metacal estimator, because a shape
+#: measurement whose response to shear is 0.64 is not an estimator of shear
+#: without one.
+#:
+#: That is the like-for-like comparison: each estimator as its own pipeline
+#: would actually deliver it. Override with
+#: ``paper_tables.py --correction shearnet=sim``.
+REPORTED_CORRECTION = {"shearnet": "rgamma", "ngmix": "metacal", "anacal": "anacal"}
 
-#: Shape columns to try, best first. The metacal-corrected prediction is what
-#: the reported m and c divide; the others are fallbacks for runs that did not
-#: measure it.
-_SHAPE_CANDIDATES = ("e_{est}_metacal_corrected", "e_{est}_metacal", "e_{est}")
+#: Which corrections each named correction actually applies.
+#:   rgamma  divide by the shear response
+#:   rpsf    use the Rbar^PSF-subtracted shape
+CORRECTION_APPLIES = {
+    "none": dict(rgamma=False, rpsf=False),
+    # The raw shape, divided by the shear response and nothing else. The
+    # response comes from metacal's SUMMARY row because that is the only
+    # ensemble R^gamma these runs measure -- run.py computes the renderer
+    # finite difference for AnaCal alone -- so this is the network's own
+    # prediction calibrated by the best available response, with metacal's
+    # reconvolution and its R^PSF both kept out.
+    "rgamma": dict(rgamma=True, rpsf=False),
+    "sim": dict(rgamma=True, rpsf=False),
+    "metacal": dict(rgamma=True, rpsf=True),
+    "anacal": dict(rgamma=True, rpsf=False),
+}
+
+#: The leakage shape implied by each correction, so alpha is measured on the
+#: SAME quantity as m and c. Quoting a bias from one pipeline and a leakage
+#: from another is the error this table exists to prevent.
+LEAKAGE_SHAPE_BY_CORRECTION = {
+    "none": "raw",
+    "rgamma": "raw_rgamma",
+    "sim": "raw",
+    "metacal": "noshear_rgamma_rpsf",
+    "anacal": "raw",
+}
+
+#: The shape column each correction is measured on. The shape MUST follow the
+#: correction: asking for "none" and then reading e_<est>_metacal_corrected
+#: reports metacal's reconvolved, PSF-subtracted measurement under the name "no
+#: correction", which is how ShearNet's numbers came to describe what metacal
+#: did to its output rather than its output.
+_SHAPE_BY_CORRECTION = {
+    "none": ("e_{est}", "e_{est}_uncorrected"),
+    "rgamma": ("e_{est}", "e_{est}_uncorrected"),
+    "sim": ("e_{est}", "e_{est}_uncorrected"),
+    "metacal": ("e_{est}_metacal_corrected", "e_{est}_metacal", "e_{est}"),
+    "anacal": ("e_{est}", "e_{est}_uncorrected"),
+}
+_SHAPE_CANDIDATES = _SHAPE_BY_CORRECTION["metacal"]
 
 
 class MissingQuantity(Exception):
@@ -87,14 +142,17 @@ def _ring_mean(table, base: str) -> np.ndarray:
     return stacked.mean(axis=0)
 
 
-def _shape_column(table, estimator: str) -> str:
-    for template in _SHAPE_CANDIDATES:
+def _shape_column(table, estimator: str, correction: Optional[str] = None) -> str:
+    candidates = _SHAPE_BY_CORRECTION.get(correction or "metacal",
+                                          _SHAPE_BY_CORRECTION["metacal"])
+    for template in candidates:
         base = template.format(est=estimator)
         if _station_suffixes(table.colnames, base):
             return base
     raise MissingQuantity(
-        f"no shape column for {estimator!r}; tried "
-        + ", ".join(t.format(est=estimator) for t in _SHAPE_CANDIDATES)
+        f"no shape column for {estimator!r} under correction "
+        f"{correction or 'metacal'!r}; tried "
+        + ", ".join(t.format(est=estimator) for t in candidates)
     )
 
 
@@ -132,7 +190,8 @@ def _jackknife_error(values: np.ndarray, njack: int = DEFAULT_NJACK) -> float:
     return float(np.sqrt((nb - 1) / nb * np.sum((samples - samples.mean()) ** 2)))
 
 
-def c2_orthogonal(evaluation, estimator: str, njack: int = DEFAULT_NJACK) -> tuple:
+def c2_orthogonal(evaluation, estimator: str, njack: int = DEFAULT_NJACK,
+                  mask=None, correction: Optional[str] = None) -> tuple:
     """The paper's c2: the mean orthogonal prediction on the g1-sheared pair.
 
     Averaged over the +gamma and -gamma populations and over the ring stations.
@@ -142,15 +201,27 @@ def c2_orthogonal(evaluation, estimator: str, njack: int = DEFAULT_NJACK) -> tup
 
     Returns ``(c2, c2_err)``.
     """
+    correction = correction or REPORTED_CORRECTION.get(estimator, "metacal")
     plus, minus = _pair_tables(evaluation, component=0)
-    base = _shape_column(plus, estimator)
+    base = _shape_column(plus, estimator, correction)
     e_plus = _ring_mean(plus, base)[:, 1]
     e_minus = _ring_mean(minus, base)[:, 1]
     combined = 0.5 * (e_plus + e_minus)
-    combined = combined[np.isfinite(combined)]
+
+    good = np.isfinite(combined)
+    if mask is not None:
+        good &= mask
+    combined = combined[good]
     if combined.size == 0:
         raise MissingQuantity(f"every {base} row is non-finite for {estimator!r}")
-    return float(combined.mean()), _jackknife_error(combined, njack)
+
+    # c is an additive bias on the SHEAR, so it carries the same response
+    # division m does. Without this, ngmix's m is calibrated by R^gamma = 0.64
+    # and its c is not, and the two are quoted on different scales in the same
+    # row. R22, because c2 is the orthogonal component.
+    response = ensemble_response(evaluation, estimator, correction)[1]
+    return (float(combined.mean()) / response,
+            _jackknife_error(combined, njack) / abs(response))
 
 
 def shape_noise(evaluation, estimator: str) -> tuple:
@@ -172,6 +243,125 @@ def shape_noise(evaluation, estimator: str) -> tuple:
     if not finite.any():
         raise MissingQuantity(f"no finite {base} rows for {estimator!r}")
     return tuple(float(v) for v in shapes[finite].std(axis=0))
+
+
+def ensemble_response(evaluation, estimator: str, correction: str):
+    """``(R11, R22)`` from SUMMARY, or ``(1, 1)`` when nothing is divided by.
+
+    The ensemble response, not a per-object one: dividing each object by its
+    own noisy finite difference injects that noise into the result, which is
+    why the harness keeps it out of the shape too.
+    """
+    if not CORRECTION_APPLIES.get(correction, {}).get("rgamma", True):
+        return (1.0, 1.0)
+    # "rgamma" is not a SUMMARY row; it reuses metacal's ensemble response.
+    row = evaluation.summary_row(
+        estimator, "metacal" if correction == "rgamma" else correction,
+        component=0)
+    if row is None:
+        raise MissingQuantity(
+            f"SUMMARY has no ({estimator!r}, {correction!r}) row, so its "
+            "response is unavailable"
+        )
+    response = (float(row["R11"]), float(row["R22"]))
+    if not all(np.isfinite(response)) or 0.0 in response:
+        raise MissingQuantity(f"response for {estimator!r} is {response}")
+    return response
+
+
+def m1_recomputed(evaluation, estimator: str, correction: Optional[str] = None,
+                  njack: int = DEFAULT_NJACK, mask=None) -> tuple:
+    """``(m1, m1_err)`` from the per-object columns, on a chosen subsample.
+
+    SUMMARY's ``m`` covers the WHOLE rendered population, so it cannot answer
+    for a cut sample; reading it while the rest of the tables apply a cut puts
+    two different samples in one paper.
+    """
+    correction = correction or REPORTED_CORRECTION.get(estimator, "metacal")
+    plus, minus = _pair_tables(evaluation, component=0)
+    base = _shape_column(plus, estimator, correction)
+    e_plus = _ring_mean(plus, base)[:, 0]
+    e_minus = _ring_mean(minus, base)[:, 0]
+
+    if not CORRECTION_APPLIES.get(correction, {}).get("rgamma", True):
+        # "No correction" is the identity response, not a missing column: the
+        # raw prediction taken as the shear. For ShearNet that is meaningful,
+        # because its response is ~1 by construction.
+        r_plus = r_minus = np.ones_like(e_plus)
+    elif correction == "rgamma":
+        # One ensemble number, not a per-object column: there is no
+        # Rgamma_<est>_rgamma, and the raw prediction's own response is not
+        # measured by these runs.
+        response = ensemble_response(evaluation, estimator, "metacal")[0]
+        r_plus = r_minus = np.full_like(e_plus, response)
+    else:
+        response_base = (f"Rgamma_{estimator}_{correction}"
+                         if _station_suffixes(plus.colnames,
+                                              f"Rgamma_{estimator}_{correction}")
+                         else f"R_{estimator}_{correction}")
+        if not _station_suffixes(plus.colnames, response_base):
+            raise MissingQuantity(
+                f"no response column for ({estimator!r}, {correction!r})"
+            )
+        r_plus = _ring_mean(plus, response_base)[:, 0, 0]
+        r_minus = _ring_mean(minus, response_base)[:, 0, 0]
+
+    good = (np.isfinite(e_plus) & np.isfinite(e_minus)
+            & np.isfinite(r_plus) & np.isfinite(r_minus))
+    if mask is not None:
+        good &= mask
+    if good.sum() < njack:
+        raise MissingQuantity(
+            f"only {int(good.sum())} objects survive for {estimator!r}; "
+            f"need at least {njack}"
+        )
+
+    numerator = 0.5 * (e_plus[good] - e_minus[good])
+    denominator = 0.5 * (r_plus[good] + r_minus[good])
+    shear = float(evaluation.header.get("SHEAR_TR", 0.01))
+    return _ratio_with_jackknife(numerator, denominator, shear, njack)
+
+
+def _ratio_with_jackknife(numerator, denominator, shear, njack):
+    """``m = <num>/<den>/shear - 1`` with the ratio re-formed in each sample."""
+    n = len(numerator)
+    blocks = max(2, min(int(njack), n))
+    edges = np.linspace(0, n, blocks + 1).astype(int)
+    num_total, den_total = numerator.sum(), denominator.sum()
+    samples = []
+    for i in range(blocks):
+        lo, hi = edges[i], edges[i + 1]
+        keep = n - (hi - lo)
+        if keep < 1:
+            continue
+        samples.append(((num_total - numerator[lo:hi].sum()) / keep)
+                       / ((den_total - denominator[lo:hi].sum()) / keep) / shear - 1.0)
+    samples = np.asarray(samples, dtype=float)
+    error = float(np.sqrt((len(samples) - 1) / len(samples)
+                          * np.sum((samples - samples.mean()) ** 2)))
+    m = float(numerator.mean() / denominator.mean() / shear - 1.0)
+    return m, error
+
+
+def m1_under_every_correction(evaluation, estimator: str,
+                              njack: int = DEFAULT_NJACK, mask=None) -> dict:
+    """``{correction: (m1, m1_err)}`` -- the evidence for choosing one."""
+    out = {}
+    try:
+        available = list(evaluation.corrections(estimator))
+    except Exception:
+        available = []
+    # "rgamma" has no SUMMARY row of its own -- it is the raw shape over
+    # metacal's ensemble response -- but it is the one most worth seeing.
+    if "metacal" in available and "rgamma" not in available:
+        available.insert(0, "rgamma")
+    for correction in available:
+        try:
+            out[correction] = m1_recomputed(evaluation, estimator, correction,
+                                            njack=njack, mask=mask)
+        except (MissingQuantity, KeyError) as exc:
+            out[correction] = (None, str(exc))
+    return out
 
 
 def m1_from_summary(evaluation, estimator: str, correction: Optional[str] = None) -> tuple:
@@ -247,7 +437,9 @@ def _combine_alpha(a1, a1_err, a2, a2_err) -> tuple:
 
 
 def run_numbers(evaluation, estimator: str, njack: int = DEFAULT_NJACK,
-                *, panel_fits_out=None, njack_leakage: int = 30) -> dict:
+                *, panel_fits_out=None, njack_leakage: int = 30, mask=None,
+                correction: Optional[str] = None,
+                leakage_shape: Optional[str] = None) -> dict:
     """Every number a table row needs, with per-field failures kept local.
 
     ``panel_fits_out`` is where superbit's panel-data FITS is written; it
@@ -259,13 +451,22 @@ def run_numbers(evaluation, estimator: str, njack: int = DEFAULT_NJACK,
     ``problems`` records why, so a partially-complete run still fills the cells
     it can. Half a row with the gap named beats no row.
     """
-    out = {"estimator": estimator, "problems": {}}
+    correction = correction or REPORTED_CORRECTION.get(estimator, "metacal")
+    leakage_shape = leakage_shape or LEAKAGE_SHAPE_BY_CORRECTION.get(correction, "raw")
+    out = {"estimator": estimator, "correction": correction,
+           "leakage_shape": leakage_shape, "problems": {}}
     if panel_fits_out is None:
         panel_fits_out = Path(tempfile.gettempdir()) / f"panels_{estimator}.fits"
 
+    # With a cut in force m1 MUST be recomputed: SUMMARY's m covers the whole
+    # rendered population and would silently report a different sample.
     for key, getter in (
-        ("m1", lambda: m1_from_summary(evaluation, estimator)),
-        ("c2", lambda: c2_orthogonal(evaluation, estimator, njack)),
+        ("m1", (lambda: m1_recomputed(evaluation, estimator, correction,
+                                      njack=njack, mask=mask))
+               if mask is not None else
+               (lambda: m1_from_summary(evaluation, estimator, correction))),
+        ("c2", lambda: c2_orthogonal(evaluation, estimator, njack, mask=mask,
+                                     correction=correction)),
     ):
         try:
             value, error = getter()
@@ -286,7 +487,8 @@ def run_numbers(evaluation, estimator: str, njack: int = DEFAULT_NJACK,
     # so this must be their fit and not a second one that happens to agree.
     try:
         a1, a1_err, a2, a2_err = panel_fits_for(
-            evaluation, estimator, panel_fits_out, njac=njack_leakage)
+            evaluation, estimator, panel_fits_out, njac=njack_leakage,
+            shape=leakage_shape)
         out["alpha1"], out["alpha1_err"] = float(a1), float(a1_err)
         out["alpha2"], out["alpha2_err"] = float(a2), float(a2_err)
         out["alpha"], out["alpha_err"] = _combine_alpha(a1, a1_err, a2, a2_err)

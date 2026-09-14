@@ -48,6 +48,7 @@ matplotlib.use("Agg")
 import numpy as np
 
 from evaluation_fits import Evaluation
+from plotstyle import tex_available, warn_once
 from paper_numbers import _pair_tables, _shape_column
 
 _NO_SUPERBIT = (
@@ -125,10 +126,13 @@ def main(argv=None) -> int:
     import matplotlib.pyplot as plt
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    # usetex is on in pub_rc; a machine without a TeX install would otherwise
-    # fail at draw time with an error that says nothing about the cause.
+    # superbit_lensing's own rcParams, used as-is. The one key overridden is
+    # usetex, and only when TeX cannot actually render here -- the env var alone
+    # was not enough, because the cluster HAS latex and still fails on a missing
+    # font package, inside tight_layout, after the figure is computed.
     rc = pub_rc(fontsize=14)
-    if os.environ.get("SHEARNET_NO_TEX"):
+    if rc.get("text.usetex") and not tex_available():
+        warn_once()
         rc = {**rc, "text.usetex": False}
     with plt.rc_context(rc):
         fig, _, coefficients = plot_comparison(

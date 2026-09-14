@@ -95,7 +95,7 @@ def _shape_columns(table: Table, estimator: str):
     return e_col, r_col
 
 
-def binned_bias(ev, estimator, bin_by, *, nbins=8, component=0, njac=20):
+def binned_bias(ev, estimator, bin_by, *, nbins=8, component=0, njac=20, mask=None):
     """m in bins of ``bin_by``, via ShearNet's own paired_bias."""
     ShapeMeasurement, paired_bias = _import_shearnet()
 
@@ -111,7 +111,13 @@ def binned_bias(ev, estimator, bin_by, *, nbins=8, component=0, njac=20):
 
     def _measure(tab):
         flags = (np.asarray(tab[flag_col], dtype=bool)
-                 if flag_col in tab.colnames else None)
+                 if flag_col in tab.colnames else np.zeros(len(tab), dtype=bool))
+        if mask is not None:
+            # paired_bias keeps ~(plus.flags | minus.flags), so a sample cut is
+            # expressed by flagging what it excludes. That routes the cut
+            # through ShearNet's own selection rather than a second one here
+            # that could disagree with it.
+            flags = flags | ~np.asarray(mask, dtype=bool)
         return ShapeMeasurement(
             e=np.asarray(tab[e_col], dtype=float),
             dedg=np.asarray(tab[r_col], dtype=float),
@@ -135,11 +141,11 @@ def binned_bias(ev, estimator, bin_by, *, nbins=8, component=0, njac=20):
     return estimate
 
 
-def _panel(ax, ev, estimators, bin_by, *, nbins, component, njac):
+def _panel(ax, ev, estimators, bin_by, *, nbins, component, njac, mask=None):
     axis = BIN_AXES.get(bin_by, {"label": bin_by, "log": False})
     for estimator in estimators:
         est = binned_bias(ev, estimator, bin_by, nbins=nbins,
-                          component=component, njac=njac)
+                          component=component, njac=njac, mask=mask)
         b = est.bins
         edges = np.asarray(b["edges"], dtype=float)
         centres = 0.5 * (edges[:-1] + edges[1:])
@@ -180,6 +186,12 @@ def main(argv=None):
                    help="output stem. Default ../figures/snr_size_dependence")
     p.add_argument("--format", nargs="+", default=["pdf", "png"])
     p.add_argument("--dpi", type=int, default=300)
+    p.add_argument("--cut", choices=("none", "superbit", "truth", "both"),
+                   default="none",
+                   help="the same sample cut the tables use (see selection.py)")
+    p.add_argument("--min-hlr", type=float, default=None)
+    p.add_argument("--min-resolution", type=float, default=None)
+    p.add_argument("--psf-fwhm", type=float, default=0.5)
     args = p.parse_args(argv)
 
     ev = Evaluation(args.fits)
@@ -190,11 +202,25 @@ def main(argv=None):
         raise SystemExit("no estimators found in SUMMARY")
     print(f"estimators: {estimators}")
 
+    mask = None
+    if args.cut != "none":
+        from selection import paired_mask
+
+        plus, minus = ev.table("TAB_P"), ev.table("TAB_M")
+        mask = np.ones(len(plus), dtype=bool)
+        if args.cut in ("truth", "both"):
+            mask &= paired_mask(plus, minus, "truth", min_hlr=args.min_hlr,
+                                min_resolution=args.min_resolution,
+                                psf_fwhm=args.psf_fwhm)
+        if args.cut in ("superbit", "both"):
+            mask &= paired_mask(plus, minus, "superbit")
+
     n = len(args.bin_by)
     fig, axes = plt.subplots(1, n, figsize=(6.6 * n, 5.0), squeeze=False)
     for ax, bin_by in zip(axes[0], args.bin_by):
         _panel(ax, ev, estimators, bin_by,
-               nbins=args.nbins, component=args.component, njac=args.njac)
+               nbins=args.nbins, component=args.component, njac=args.njac,
+               mask=mask)
     axes[0][0].legend(frameon=False, fontsize=10)
     fig.tight_layout()
 

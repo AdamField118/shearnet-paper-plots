@@ -105,6 +105,8 @@ NOT_DELIVERABLES = {
     "results/make_fixture.py": "test fixture generator (--out, not --fits)",
     "results/diagnose_metacal.py": "diagnostic for the metacal bias, not a figure",
     "results/paper_manifest.py": "this audit",
+    "results/plotstyle.py": "library: the TeX-availability probe",
+    "results/test_run_all_paths.py": "tests for the driver's path handling",
 }
 
 

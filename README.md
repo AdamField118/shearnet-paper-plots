@@ -242,3 +242,80 @@ Two things worth knowing:
   stronger ellipticity will saturate them and show flat blocks of colour. This script
   deliberately does not override that — if the limits need to change, change them in
   `superbit_lensing` so this figure and the SuperBIT paper stay consistent.
+
+## House rule: never reimplement a plotter, never wrap one
+
+Precedence for anything that draws or fits:
+
+1. **`s-Sayan/LITB-III-plots`** -- if it has a plotter for what we need, use that.
+2. **`superbit_lensing.plotter`** -- otherwise, use theirs.
+3. Only if neither has it, build it here.
+
+Use the **exact** imported function. Not a copy, not a reimplementation, and not
+a local wrapper under a different name -- call theirs at the call site, so what
+reaches the page is what they maintain.
+
+### Survey, LITB-III-plots @4712964
+
+It is a notebook repo: every figure is drawn inline and its `def`s are local to
+one notebook, so nothing is importable. Its three `.py` modules cover PSF
+spatial maps (`sec3/sec3.2/psf_analysis_functions.py`), number density
+(`sec4/sec4.4/number_density.py`) and a footprint
+(`sec2/sec2.3/fig2_target_footprints.py`) -- none of which this paper plots. Its
+shear-bias figure (`sec5/fig19_shear_bias.ipynb`) measures bias from a
+tangential-shear radial profile, a different quantity from the pair-matched ring
+`m` here.
+
+Where it draws what we draw, it imports from `superbit_lensing`
+(`plot_psf_leakage_comparison`, `PSFLeakagePanelMaker`, `pub_rc`). So the chain
+resolves there, which is what this repo already calls.
+
+| what | who draws it |
+|---|---|
+| `fig:psf_leakage` | `superbit_lensing.plotter.PSFLeakagePanelMaker`, `save_all_panels_to_fits`, `plot_psf_leakage_comparison` |
+| `fig:prediction-residuals` | `superbit_lensing.plotter.plot_comparison` |
+| `fig:snr_size` | `shearnet.methods.anacal.paired_bias` for the bias; axes here |
+| `fig:response_snr` | no plotter in either repo; axes here, `pub_rc` for styling |
+| `tab:*` | no plotter applies; `superbit_lensing` supplies the selection-cut values |
+
+`results/plotstyle.py` is NOT a styling wrapper: figures call `pub_rc` directly,
+and that module answers only whether the local TeX can render.
+
+## Which number each estimator is reported under
+
+`paper_numbers.REPORTED_CORRECTION` -- a scientific choice, not a default.
+
+* **ShearNet: `rgamma`.** The raw image -- metacal never touching it -- divided
+  by its shear response and nothing else. On the **uncut** UT4 sample that
+  response is **0.907**, not the 0.99 measured on the resolution-cut sample, so
+  leaving it uncalibrated reports `m = -85e-3` where the same shape over
+  `R^gamma` reports `+8.4e-3`. What ShearNet does not need is metacal's
+  deconvolve/reconvolve: it doubles the leakage (0.95e-2 -> 2.1e-2) and brings
+  in an `R^PSF` term that is separately broken.
+* **ngmix: `metacal`.** The full estimator -- `R^PSF` subtracted, then divided
+  by `R^gamma`. A shape measurement responding to shear at 0.64 is not an
+  estimator of shear without it.
+
+`m`, `c` and `alpha` all follow that one choice
+(`_SHAPE_BY_CORRECTION`, `LEAKAGE_SHAPE_BY_CORRECTION`), so the paper cannot
+quote a bias from one pipeline and a leakage from another. Compare the options
+with `paper_tables.py --compare-corrections` and
+`psf_leakage.py --compare-shapes`.
+
+### Leakage shape names
+
+Named by the corrections they carry, because "corrected" and "calibrated" do
+not distinguish two different corrections:
+
+| name | image | `R^PSF` | `R^gamma` |
+|---|---|---|---|
+| `raw` | original | no | no |
+| `raw_rgamma` | original | no | yes |
+| `noshear` | metacal reconvolved | no | no |
+| `noshear_rgamma` | metacal reconvolved | no | yes |
+| `noshear_rpsf` | metacal reconvolved | yes | no |
+| `noshear_rgamma_rpsf` | metacal reconvolved | yes | yes |
+
+`run.py`'s own column names invert the convention -- it writes metacal's noshear
+as `e_<est>_raw` and the genuinely raw measurement as `e_<est>_original` -- so
+`Evaluation.COLUMNS_BY_SOURCE` states the mapping once.

@@ -41,6 +41,7 @@ matplotlib.use("Agg")
 import numpy as np
 
 from evaluation_fits import Evaluation
+from plotstyle import tex_available, warn_once
 from paper_numbers import DEFAULT_NJACK, _jackknife_error, _pair_tables, _ring_mean
 from response_diagnostics import _matrix_column
 
@@ -97,8 +98,11 @@ def draw(evaluation, estimators, *, nbins, njack, key, mask, out_path):
 
     import matplotlib.pyplot as plt
 
+    # superbit_lensing's own rcParams, used as-is; usetex dropped only when
+    # TeX cannot render here.
     rc = pub_rc(fontsize=14)
-    if os.environ.get("SHEARNET_NO_TEX"):
+    if rc.get("text.usetex") and not tex_available():
+        warn_once()
         rc = {**rc, "text.usetex": False}
 
     panels = (
