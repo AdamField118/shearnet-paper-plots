@@ -51,8 +51,14 @@ def _pair(rng, n, sign, shear, m1, c2, alpha, beta, gpsf, tpsf, sigma_e):
         e1 = intrinsic.real + (1.0 + m1) * applied + alpha * gpsf[:, 0] + beta * dt
         e2 = intrinsic.imag + c2 + alpha * gpsf[:, 1] + beta * dt
         shape = np.column_stack([e1, e2]) + rng.normal(0, 1e-3, (n, 2))
+        # run.py writes stamps.labels[:, :2], which is the COMPOSED shape --
+        # the intrinsic ellipticity with the applied shear on it -- not the
+        # applied shear alone. It therefore varies object to object, and a
+        # figure that regresses against it (fig:prediction-residuals) needs
+        # that spread: a constant truth column makes the quadratic fit inside
+        # superbit_lensing.plot_comparison singular.
         col[f"g_th{station}"] = np.column_stack([
-            np.full(n, applied) + intrinsic.real * 0.0, np.zeros(n)])
+            intrinsic.real + applied, intrinsic.imag])
         for est in ESTIMATORS:
             col[f"e_{est}{station}"] = shape + rng.normal(0, 1e-3, (n, 2))
             col[f"e_{est}_uncorrected{station}"] = shape + rng.normal(0, 1e-3, (n, 2))
@@ -124,6 +130,7 @@ def write_fixture(path, n=5000, seed=0, m1=-0.012, c2=3.0e-5,
         ("SHEAR_TR", shear, "shear_true"), ("COMPONEN", 0, "component"),
         ("N_JACKKN", 20, "n_jackknife"), ("SNC", len(STATIONS), "shape_noise_cancel"),
         ("RENDER_S", 812.5, "render_seconds"), ("INFERENC", 6.31, "inference_seconds"),
+        ("NGMIX_SE", 4180.0, "ngmix_seconds"), ("NGMIX_NP", 18, "ngmix_nproc"),
         ("CATLEVEL", "paper", "catalog level"),
         ("FAKE_M1", m1, "injected m1"), ("FAKE_C2", c2, "injected c2"),
         ("FAKE_A1", alpha, "injected alpha"), ("FAKE_B1", beta, "injected beta"),
