@@ -133,6 +133,41 @@ def test_as_sorted_orders_by_x_and_drops_nan():
     assert list(e) == [0.01, 0.02, 0.03]
 
 
+# --------------------------------------------------------------------------
+# 3. the figure and the table quote alpha on the same shape
+# --------------------------------------------------------------------------
+
+def test_the_figure_and_the_tables_resolve_the_same_leakage_shape():
+    """fig:psf_leakage and tab:unit-test-bias must not drift apart.
+
+    ``run_all.sh`` passes no ``--shape``, so before this both estimators were
+    fitted on ``raw`` while the tables quoted each on its own shape -- a figure
+    and a caption describing different measurements, with nothing failing.
+    """
+    from paper_numbers import reported_leakage_shape
+    from psf_leakage import _reported_shape
+
+    for estimator in ("shearnet", "ngmix"):
+        assert _reported_shape(estimator) == reported_leakage_shape(estimator)
+
+
+def test_ngmix_leakage_excludes_rpsf():
+    """The one deliberate divergence, pinned so it cannot revert quietly.
+
+    ngmix's m and c come from the full metacal pipeline, but its alpha stops one
+    step short: R^PSF is ~25x larger than the leakage it would correct and
+    subtracting it flips the sign (alpha -0.43 rather than +0.017). The paper's
+    frozen numbers and its limitations section both assume R^PSF is applied to
+    neither estimator's leakage.
+    """
+    from paper_numbers import REPORTED_CORRECTION, reported_leakage_shape
+
+    assert REPORTED_CORRECTION["ngmix"] == "metacal", "m and c stay on metacal"
+    assert reported_leakage_shape("ngmix") == "noshear_rgamma"
+    assert "rpsf" not in reported_leakage_shape("ngmix")
+    assert "rpsf" not in reported_leakage_shape("shearnet")
+
+
 def test_the_x_axis_is_log_with_one_two_five_ticks():
     fig, ax = plt.subplots()
     style_log_x(ax, 5.0, 2000.0)

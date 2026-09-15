@@ -1,0 +1,93 @@
+--- what the paper asks for ---
+
+1 item(s) need attention.
+
+
+=== tab:response-diag ===
+% tab:response-diag from fourth.fits
+% columns: response & estimator & R11 & R22 & R12 & R21
+% entries are MEASURED MINUS TARGET: R^gamma against the identity,
+% R^PSF against zero, so every column should read consistent with 0.
+% jackknife blocks: 20   sample cut: none
+$R^{\gamma}$ & \textsc{shearnet} & $-0.0927 \pm 0.0006$ & $-0.0973 \pm 0.0006$ & $+0.0110 \pm 0.0004$ & $+0.0126 \pm 0.0003$ \\
+$R^{\gamma}$ & \textsc{ngmix} & $-0.3589 \pm 0.0026$ & $-0.3428 \pm 0.0022$ & $-0.0010 \pm 0.0028$ & $+0.0103 \pm 0.0027$ \\
+$R^{\rm PSF}$ & \textsc{shearnet} & $-0.3749 \pm 0.0006$ & $-0.2772 \pm 0.0005$ & $-0.0024 \pm 0.0002$ & $-0.0043 \pm 0.0002$ \\
+$R^{\rm PSF}$ & \textsc{ngmix} & $+0.2814 \pm 0.0025$ & $+0.2685 \pm 0.0023$ & $-0.0014 \pm 0.0024$ & $+0.0052 \pm 0.0024$ \\
+
+% wrote /home/adfield/shearnet-paper-plots/output/tab_response_diag.tex
+
+=== tab:timing ===
+% tab:timing from fourth.fits
+% columns: method & wall-clock (s) & objects s^-1
+% objects measured: 200000
+% EXCLUDED for both methods: rendering, JAX compilation, and the
+% perturbed images used for the metacalibration responses.
+% rendering took 230.3 s and is not in the table.
+% NOT IN THIS FILE'S HEADER: ngmix (NGMIX_SE)
+\textsc{ShearNet}-D4 (1 GPU) & 22.82 & 8764 \\
+\textsc{ngmix} (CPU pool (18 cores)) & \pending & \pending \\
+\hline
+Ratio & & \pending \\
+
+% 1 field(s) absent -- rows emitted as \pending.
+% The header records what run.py measured; a number invented here
+% would describe whatever machine this script ran on.
+% wrote /home/adfield/shearnet-paper-plots/output/tab_timing.tex
+
+=== fig:psf_leakage ===
+<Evaluation fourth.fits: HDUs=['PRIMARY', 'TAB_P', 'TAB_M', 'TAB_P2', 'TAB_M2', 'LEAKAGE', 'SUMMARY', 'BINNED', 'LEAKSUM'], estimators=['shearnet', 'ngmix'], SNC=4>
+comparing: ['shearnet', 'ngmix']
+[WROTE] /tmp/tmp48hf_32t/panels_shearnet.fits  (2 extensions)
+  ShearNet-D4 [raw_rgamma]: alpha1 = -0.0104 +/- 0.0006, alpha2 = -0.0120 +/- 0.0009
+[WROTE] /tmp/tmp48hf_32t/panels_ngmix.fits  (2 extensions)
+  NGmix [noshear_rgamma]: alpha1 = +0.0167 +/- 0.0023, alpha2 = +0.0751 +/- 0.0019
+[SAVED] /home/adfield/shearnet-paper-plots/figures/psf_leakage.pdf
+wrote /home/adfield/shearnet-paper-plots/figures/psf_leakage.pdf
+wrote /home/adfield/shearnet-paper-plots/figures/psf_leakage.png
+
+=== fig:snr_size ===
+<Evaluation fourth.fits: HDUs=['PRIMARY', 'TAB_P', 'TAB_M', 'TAB_P2', 'TAB_M2', 'LEAKAGE', 'SUMMARY', 'BINNED', 'LEAKSUM'], estimators=['shearnet', 'ngmix'], SNC=4>
+estimators: ['shearnet', 'ngmix']
+  shearnet  s2n      m range [+1.66e-02, +3.32e-01]
+  ngmix     s2n      m range [+6.90e-02, +6.19e-01]
+  shearnet  hlr_th   m range [+2.47e-02, +2.49e-01]
+  ngmix     hlr_th   m range [-5.01e-03, +7.57e-01]
+wrote /home/adfield/shearnet-paper-plots/figures/snr_size_dependence.pdf
+wrote /home/adfield/shearnet-paper-plots/figures/snr_size_dependence.png
+
+=== fig:prediction-residuals ===
+200000 objects, estimators: shearnet, ngmix
+note: TeX cannot render here, so text.usetex is off and the
+      figure uses mathtext. For the paper's fonts:
+      ~/.TinyTeX/bin/*/tlmgr install cm-super type1cm dvipng
+  shearnet_vs_$g_1^{\rm true}$:  slope -0.12014 +/- 0.00084   offset -0.00882 +/- 0.00028
+  ngmix_vs_$g_1^{\rm true}$:  slope -0.38350 +/- 0.00070   offset +0.01341 +/- 0.00023
+wrote /home/adfield/shearnet-paper-plots/output/prediction_residuals.pdf
+
+=== fig:response_snr ===
+note: TeX cannot render here, so text.usetex is off and the
+      figure uses mathtext. For the paper's fonts:
+      ~/.TinyTeX/bin/*/tlmgr install cm-super type1cm dvipng
+wrote /home/adfield/shearnet-paper-plots/output/response_vs_snr.pdf
+
+=== tab:unit-test-bias ===
+[WROTE] /tmp/panels_shearnet.fits  (2 extensions)
+[WROTE] /tmp/panels_ngmix.fits  (2 extensions)
+[WROTE] /tmp/panels_shearnet.fits  (2 extensions)
+[WROTE] /tmp/panels_ngmix.fits  (2 extensions)
+[WROTE] /tmp/panels_shearnet.fits  (2 extensions)
+[WROTE] /tmp/panels_ngmix.fits  (2 extensions)
+[WROTE] /tmp/panels_shearnet.fits  (2 extensions)
+[WROTE] /tmp/panels_ngmix.fits  (2 extensions)
+% tab:unit-test-bias -- m1 and c2 across the simulation ladder
+% corrections: shearnet -> rgamma (alpha on the raw_rgamma shape), ngmix -> metacal (alpha on the noshear_rgamma shape)
+% sample cut: none
+% m1 from: ngmix -> summary, shearnet -> recomputed  (recomputed = from the per-object columns)
+% columns: shearnet m1, shearnet c2, ngmix m1, ngmix c2
+UT1 & $+17.88 \pm 0.04$ & $-43.53 \pm 1.56$ & $+16.10 \pm 3.57$ & $+24.78 \pm 2.06$ \\
+UT2 & $-9.77 \pm 0.06$ & $+0.76 \pm 2.15$ & $+16.32 \pm 6.21$ & $+907.69 \pm 5.19$ \\
+UT3 & $+8.87 \pm 0.20$ & $-2.33 \pm 5.89$ & $+109.01 \pm 8.27$ & $+1180.51 \pm 10.18$ \\
+\textbf{UT4} & $+8.38 \pm 0.32$ & $-4.86 \pm 8.29$ & $+165.27 \pm 13.81$ & $+1176.61 \pm 13.20$ \\
+
+
+Done. Every deliverable produced. Output in /home/adfield/shearnet-paper-plots/output

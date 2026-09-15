@@ -223,11 +223,11 @@ def main(argv=None) -> int:
                                                  cut=args.cut, args=args)
         print(f"% {spec['caption']}")
         chosen = _corrections_from(args)
-        from paper_numbers import LEAKAGE_SHAPE_BY_CORRECTION as _LS
+        from paper_numbers import reported_leakage_shape as _shape
 
         print("% corrections: " + ", ".join(
             f"{est} -> {chosen.get(est)} (alpha on the "
-            f"{_LS.get(chosen.get(est), 'raw')} shape)"
+            f"{_shape(est, chosen.get(est))} shape)"
             for est in spec["estimators"]))
         print(f"% sample cut: {args.cut}")
         if m1_sources:

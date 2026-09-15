@@ -12,11 +12,22 @@ drawing are all done by ``superbit_lensing``:
     superbit_lensing.plotter.plot_psf_leakage_comparison  the figure
 
 This module only pulls the right columns out of the ShearNet evaluation FITS and
-hands them over. The columns are chosen deliberately (see
-``Evaluation._leakage_shape_col``): the *raw* ring-averaged shape, because the ring
-average cancels intrinsic ellipticity while leaving the leakage signal, and because
-applying the PSF-response correction first would subtract the very quantity this
-figure measures.
+hands them over. Every shape is ring-averaged, because the ring average cancels
+intrinsic ellipticity while leaving the leakage signal.
+
+WHICH SHAPE, AND WHY IT IS NOT ONE SHAPE
+----------------------------------------
+By default each estimator is fitted on the shape its alpha is *quoted* on --
+:func:`_reported_shape`, read from ``paper_numbers`` so this figure cannot drift
+from ``tab:unit-test-bias``. Those differ by estimator: ShearNet is reported under
+``rgamma`` (the raw image, metacal never touching it, divided by its ensemble shear
+response) and ngmix under the full ``metacal``. So there is no single shape that
+makes the figure and the text agree, and taking one for both would silently put a
+different number in the caption than in the table.
+
+``--shape`` overrides that with one shape for both, which is the right thing when
+the question is "what does this correction do", and the wrong thing when the figure
+is going in the paper. ``--compare-shapes`` prints alpha under every shape.
 
 ``plot_psf_leakage_comparison`` compares exactly two datasets, so with more than two
 estimators present, pass ``--estimators`` to choose the pair.
@@ -25,7 +36,7 @@ Usage
 -----
     python psf_leakage.py --fits .../evaluation.fits
     python psf_leakage.py --fits .../evaluation.fits --estimators shearnet ngmix
-    python psf_leakage.py --fits .../evaluation.fits --nbin 12 --njac 30
+    python psf_leakage.py --fits .../evaluation.fits --compare-shapes
 """
 
 from __future__ import annotations
@@ -65,6 +76,21 @@ def _import_superbit():
             f"Underlying error: {exc}"
         ) from exc
     return PSFLeakagePanelMaker, save_all_panels_to_fits, plot_psf_leakage_comparison
+
+
+def _reported_shape(estimator: str) -> str:
+    """The shape this estimator's alpha is quoted on, from paper_numbers.
+
+    Each estimator is reported on its own shape -- ShearNet on the raw image
+    divided by its shear response, ngmix on metacal's noshear image divided by
+    its own -- so there is no single shape that makes this figure agree with the
+    alpha in the text. Resolving through ``paper_numbers`` rather than picking
+    one shape for both is what keeps ``fig:psf_leakage`` and
+    ``tab:unit-test-bias`` describing the same measurement.
+    """
+    from paper_numbers import reported_leakage_shape
+
+    return reported_leakage_shape(estimator)
 
 
 def panel_fits_for(evaluation, estimator, out_fits, *, nbin=10, min_count=20,
@@ -141,14 +167,17 @@ def main(argv=None):
                    help="output stem. Default ../figures/psf_leakage")
     p.add_argument("--format", nargs="+", default=["pdf", "png"])
     p.add_argument("--dpi", type=int, default=300)
-    p.add_argument("--shape", default="raw",
+    p.add_argument("--shape", default=None,
                    choices=("raw", "raw_rgamma", "noshear", "noshear_rgamma",
                             "noshear_rpsf", "noshear_rgamma_rpsf"),
-                   help="which measurement to fit, named by the corrections it "
-                        "carries. raw = the original image, metacal never "
+                   help="ONE shape for both estimators, overriding the "
+                        "per-estimator default. Named by the corrections it "
+                        "carries: raw = the original image, metacal never "
                         "touched it. noshear = metacal's reconvolved image. "
                         "_rgamma = divided by <R^gamma>. _rpsf = Rbar^PSF "
-                        "subtracted.")
+                        "subtracted. Default is each estimator's own reported "
+                        "shape, which is what the tables quote -- use this only "
+                        "to put both pipelines on one footing deliberately.")
     p.add_argument("--compare-shapes", action="store_true",
                    help="print alpha for every shape and stop, so the effect of "
                         "each correction is visible rather than argued")
@@ -215,13 +244,14 @@ def main(argv=None):
     try:
         panel_files = []
         for estimator in chosen:
+            shape = args.shape or _reported_shape(estimator)
             out_fits = panel_dir / f"panels_{estimator}.fits"
             a1, a1e, a2, a2e = panel_fits_for(
                 ev, estimator, out_fits,
                 nbin=args.nbin, min_count=args.min_count, njac=args.njac,
-                shape=args.shape,
+                shape=shape,
             )
-            print(f"  {DISPLAY_NAME.get(estimator, estimator)}: "
+            print(f"  {DISPLAY_NAME.get(estimator, estimator)} [{shape}]: "
                   f"alpha1 = {a1:+.4f} +/- {a1e:.4f}, "
                   f"alpha2 = {a2:+.4f} +/- {a2e:.4f}")
             panel_files.append(out_fits)

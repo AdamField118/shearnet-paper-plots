@@ -97,6 +97,39 @@ LEAKAGE_SHAPE_BY_CORRECTION = {
     "anacal": "raw",
 }
 
+#: The ONE deliberate departure from the rule above, and the paper argues for it
+#: rather than hiding it.
+#:
+#: ngmix's m and c are quoted under the full ``metacal`` pipeline, R^PSF and all.
+#: Its alpha is not: R^PSF is measured at +0.281 against a leakage of 0.011 in
+#: the very shape it would correct -- 25x too large -- and subtracting it drives
+#: alpha to -0.43, sign-flipped, injecting leakage instead of removing it. So
+#: alpha is quoted one step short of the full pipeline, on the R^gamma-calibrated
+#: noshear shape, for the same reason ShearNet's is: neither estimator has R^PSF
+#: applied to its leakage.
+#:
+#: That makes alpha and m describe slightly different quantities for ngmix, which
+#: is exactly the error LEAKAGE_SHAPE_BY_CORRECTION exists to prevent -- so it is
+#: spelled out here, printed by paper_tables, and written up in the paper's
+#: limitations rather than left for a referee to find. Delete this dict the day
+#: R^PSF is understood, and alpha follows m again with no other edit.
+REPORTED_LEAKAGE_SHAPE = {
+    "ngmix": "noshear_rgamma",
+}
+
+
+def reported_leakage_shape(estimator: str, correction: Optional[str] = None) -> str:
+    """The shape this estimator's alpha is quoted on.
+
+    Single source of truth for the figure and the tables: ``psf_leakage.py`` and
+    ``run_numbers`` both resolve through here, so ``fig:psf_leakage`` cannot come
+    to show a different alpha than ``tab:unit-test-bias`` prints.
+    """
+    if estimator in REPORTED_LEAKAGE_SHAPE:
+        return REPORTED_LEAKAGE_SHAPE[estimator]
+    correction = correction or REPORTED_CORRECTION.get(estimator, "metacal")
+    return LEAKAGE_SHAPE_BY_CORRECTION.get(correction, "raw")
+
 #: The shape column each correction is measured on. The shape MUST follow the
 #: correction: asking for "none" and then reading e_<est>_metacal_corrected
 #: reports metacal's reconvolved, PSF-subtracted measurement under the name "no
@@ -452,7 +485,7 @@ def run_numbers(evaluation, estimator: str, njack: int = DEFAULT_NJACK,
     it can. Half a row with the gap named beats no row.
     """
     correction = correction or REPORTED_CORRECTION.get(estimator, "metacal")
-    leakage_shape = leakage_shape or LEAKAGE_SHAPE_BY_CORRECTION.get(correction, "raw")
+    leakage_shape = leakage_shape or reported_leakage_shape(estimator, correction)
     out = {"estimator": estimator, "correction": correction,
            "leakage_shape": leakage_shape, "problems": {}}
     if panel_fits_out is None:
