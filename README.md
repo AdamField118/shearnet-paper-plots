@@ -4,19 +4,51 @@ Figure-generation code for the ShearNet paper. Each subdirectory produces one
 family of figures; rendered output is written to `figures/` (git-ignored, so the
 repo stays free of binary churn — regenerate rather than commit).
 
-## House rule: defer to `superbit_lensing`
+## House rule: never reimplement a plot that already exists
 
-**Any plot that the SuperBIT pipeline already knows how to make is made by calling
-`superbit_lensing`, not by reimplementing it here.** These figures sit next to the
-SuperBIT weak-lensing paper, and a second implementation of the same diagnostic is a
-second thing that can silently disagree with it. Scripts in this repo are thin: they
-resolve inputs, cache expensive intermediate products, and save output. The moment
-fitting, colour maps, colour limits and panel layout come from upstream.
+**Any plot one of our own repos already knows how to make is made by calling that
+code, not by writing it again here.** These figures sit next to the SuperBIT
+weak-lensing paper, and a second implementation of the same diagnostic is a second
+thing that can silently disagree with it. Scripts in this repo are thin: they resolve
+inputs, cache expensive intermediate products, and save output. The moment fitting,
+colour maps, colour limits and panel layout come from upstream.
+
+Look in this order, highest priority first, and stop at the first hit:
+
+| | source | what it covers |
+|---|---|---|
+| 1 | [`s-Sayan/LITB-III-plots`](https://github.com/s-Sayan/LITB-III-plots) | the SuperBIT paper's own final figures |
+| 2 | [`superbit-collaboration/superbit-lensing`](https://github.com/superbit-collaboration/superbit-lensing) | `superbit_lensing.plotter` — the pipeline's plot helpers |
+| 3 | `ShearNet:research/shear_bias/plots_from_fits.ipynb` | the working notebook these runs were read with |
+| 4 | *(only if 1–3 have nothing)* | write it here, and say in the docstring what you looked at |
+
+**Use the exact implementation — never wrap it.** Call the upstream function and pass
+it data; do not re-spell its styling, re-derive its fit, or hide it behind a local
+shim that will drift. `results/plotstyle.py` is the shape that is allowed: it answers
+an *environment* question (can TeX render here?), and every figure still calls
+`pub_rc` itself.
+
+Each script that took a plotter from one of these says so at the top of its
+docstring — which level it came from, and what the higher levels turned out not to
+have, so the next person does not repeat the search. `results/response_vs_snr.py` is
+the worked example.
 
 The practical consequence is that upstream's choices win even when they are
 inconvenient — see the note on hard-coded colour limits under `psf/` below. If one of
-those choices needs to change, change it in `superbit_lensing` so both papers move
-together.
+those choices needs to change, change it upstream so both papers move together.
+
+### The one thing we change after the fact
+
+Upstream plotters were written for catalogues of a few thousand objects and draw
+every point as a vector path. At our sizes (2×10⁵ per panel) that is a PDF no viewer
+will open: `plot_comparison` on UT4 emits 18 MB of drawing commands, 6 MB on disk,
+and takes ~30 s per page even in a fast C renderer. So after the upstream call
+returns, the point cloud is rasterized and everything else — axes, fit curve, every
+piece of text — is left as vectors
+(`results/prediction_residuals.py::_rasterize_scatter`; 6.2 MB → 0.8 MB). That sets
+one property on the artists upstream handed back. It reimplements nothing, and it is
+what LITB-III-plots does with its own large scatters (`sec1/fig1_footprint.ipynb`,
+`sec2/sec2.3/fig2_target_footprints.py`).
 
 ## ShearNet dependency
 

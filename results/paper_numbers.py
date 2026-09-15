@@ -458,13 +458,35 @@ def run_numbers(evaluation, estimator: str, njack: int = DEFAULT_NJACK,
     if panel_fits_out is None:
         panel_fits_out = Path(tempfile.gettempdir()) / f"panels_{estimator}.fits"
 
-    # With a cut in force m1 MUST be recomputed: SUMMARY's m covers the whole
-    # rendered population and would silently report a different sample.
+    # Where m1 comes from, in order:
+    #
+    #   a cut is in force     -> recompute, always. SUMMARY's m covers the WHOLE
+    #                            rendered population, so reading it under a cut
+    #                            would put two different samples in one paper.
+    #   no cut, SUMMARY has   -> SUMMARY: the harness's own jackknifed number.
+    #     the row
+    #   no cut, it does not   -> recompute.
+    #
+    # That last case is not an edge. The paper reports ShearNet under
+    # ``rgamma``, which is not one of the CORRECTIONS the benchmark writes
+    # SUMMARY rows for, so ShearNet's m1 is ALWAYS a recompute. Without this
+    # fallback every ShearNet m1 in tab:unit-test-bias reads ``\pending``, which
+    # looks like an unfinished campaign rather than a lookup that missed.
+    def _m1():
+        if mask is not None:
+            out["m1_source"] = "recomputed"
+            return m1_recomputed(evaluation, estimator, correction,
+                                 njack=njack, mask=mask)
+        try:
+            value = m1_from_summary(evaluation, estimator, correction)
+            out["m1_source"] = "summary"
+            return value
+        except MissingQuantity:
+            out["m1_source"] = "recomputed"
+            return m1_recomputed(evaluation, estimator, correction, njack=njack)
+
     for key, getter in (
-        ("m1", (lambda: m1_recomputed(evaluation, estimator, correction,
-                                      njack=njack, mask=mask))
-               if mask is not None else
-               (lambda: m1_from_summary(evaluation, estimator, correction))),
+        ("m1", _m1),
         ("c2", lambda: c2_orthogonal(evaluation, estimator, njack, mask=mask,
                                      correction=correction)),
     ):

@@ -111,8 +111,15 @@ def _corrections_from(args) -> dict:
 
 
 def build_table(spec: dict, root: Path, njack: int = 20, cut="none", args=None):
-    """``(latex_lines, missing_run_names)`` for one table."""
-    lines, missing, cache = [], [], {}
+    """``(latex_lines, missing_run_names, m1_sources)`` for one table.
+
+    ``m1_sources`` maps each estimator to where its m1 actually came from --
+    SUMMARY, or a recompute off the per-object columns -- so the header comment
+    can state which rather than assume SUMMARY answered merely because no cut
+    was asked for. It does not always: SUMMARY has no row for the ``rgamma``
+    correction the paper reports ShearNet under.
+    """
+    lines, missing, cache, sources = [], [], {}, {}
     for name, label in spec["rows"]:
         if name is None:
             lines.append(r"\hline")
@@ -135,10 +142,14 @@ def build_table(spec: dict, root: Path, njack: int = 20, cut="none", args=None):
                                  correction=chosen.get(est))
                 for est in spec["estimators"]
             }
+        for est in spec["estimators"]:
+            where = cache[name][est].get("m1_source")
+            if where is not None:
+                sources.setdefault(est, set()).add(where)
         cells = [cell(cache[name][est], column)
                  for est in spec["estimators"] for column in spec["columns"]]
         lines.append(f"{label} & " + " & ".join(cells) + r" \\")
-    return lines, missing
+    return lines, missing, sources
 
 
 def main(argv=None) -> int:
@@ -207,8 +218,9 @@ def main(argv=None) -> int:
 
     for key in wanted:
         spec = TABLES[key]
-        lines, missing = build_table(spec, args.runs, njack=args.njack,
-                                     cut=args.cut, args=args)
+        lines, missing, m1_sources = build_table(spec, args.runs,
+                                                 njack=args.njack,
+                                                 cut=args.cut, args=args)
         print(f"% {spec['caption']}")
         chosen = _corrections_from(args)
         from paper_numbers import LEAKAGE_SHAPE_BY_CORRECTION as _LS
@@ -217,9 +229,12 @@ def main(argv=None) -> int:
             f"{est} -> {chosen.get(est)} (alpha on the "
             f"{_LS.get(chosen.get(est), 'raw')} shape)"
             for est in spec["estimators"]))
-        print(f"% sample cut: {args.cut}"
-              + ("  (m1 recomputed from the per-object columns, not SUMMARY)"
-                 if args.cut != "none" else "  (m1 from SUMMARY)"))
+        print(f"% sample cut: {args.cut}")
+        if m1_sources:
+            print("% m1 from: " + ", ".join(
+                f"{est} -> {'/'.join(sorted(where))}"
+                for est, where in sorted(m1_sources.items())
+            ) + "  (recomputed = from the per-object columns)")
         print(f"% columns: " + ", ".join(
             f"{est} {col}" for est in spec["estimators"] for col in spec["columns"]))
         if missing:

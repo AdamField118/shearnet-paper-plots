@@ -29,6 +29,10 @@ Only the ``+gamma`` population is drawn. Differencing the pair would show the
 pair-matched estimator that ``tab:unit-test-bias`` already reports, not the
 per-object residual this figure is about.
 
+The point cloud is rasterized before the page is written -- see
+:func:`_rasterize_scatter` -- because at 2x10^5 objects per panel the vector
+version is a PDF that will not open.
+
     python prediction_residuals.py --fits ../evaluations/fourth.fits
     python prediction_residuals.py --fits ../evaluations/fourth.fits \\
         --cut both --min-resolution 1.0 --component 0
@@ -79,6 +83,35 @@ def panel_inputs(evaluation, estimators, component=0, mask=None):
     return cat, reference, list(estimators)
 
 
+def _rasterize_scatter(axes) -> int:
+    """Draw the point cloud as pixels, leaving every other artist vector.
+
+    ``plot_comparison`` calls ``scatter`` once per panel with no rasterization,
+    which is right at the sizes it was written for and fatal at ours: one PDF
+    path operator per point, two panels, 2x10^5 objects each, and the page
+    becomes 18 MB of uncompressed drawing commands (6 MB on disk) that viewers
+    will not open.
+
+    Rasterizing only the ``PathCollection`` leaves the axes, the fit curve, the
+    tolerance band and every piece of text as vectors, so the figure still
+    scales and the text is still selectable and searchable. It is the same thing
+    LITB-III-plots does with its large scatters (``sec1/fig1_footprint.ipynb``,
+    ``sec2/sec2.3/fig2_target_footprints.py``, both ``rasterized=True``).
+
+    Nothing about the figure is re-implemented: this sets one property on the
+    artists ``plot_comparison`` returned.
+    """
+    from matplotlib.collections import PathCollection
+
+    count = 0
+    for ax in np.atleast_1d(axes).ravel():
+        for collection in ax.collections:
+            if isinstance(collection, PathCollection):
+                collection.set_rasterized(True)
+                count += 1
+    return count
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--fits", required=True, type=Path)
@@ -93,6 +126,12 @@ def main(argv=None) -> int:
     parser.add_argument("--min-hlr", type=float, default=None)
     parser.add_argument("--min-resolution", type=float, default=None)
     parser.add_argument("--psf-fwhm", type=float, default=0.5)
+    parser.add_argument("--dpi", type=int, default=300,
+                        help="resolution of the rasterized point cloud "
+                             "(plot_comparison's own value; 300 is print)")
+    parser.add_argument("--no-rasterize", action="store_true",
+                        help="keep every point a vector path -- only for a "
+                             "small sample, see _rasterize_scatter")
     args = parser.parse_args(argv)
 
     try:
@@ -135,11 +174,17 @@ def main(argv=None) -> int:
         warn_once()
         rc = {**rc, "text.usetex": False}
     with plt.rc_context(rc):
-        fig, _, coefficients = plot_comparison(
+        # save_path is deliberately NOT passed: plot_comparison would write the
+        # file before we can rasterize, and an unrasterized scatter of this many
+        # points is a PDF no viewer will open (see _rasterize_scatter). The
+        # savefig below uses plot_comparison's own dpi and bbox_inches.
+        fig, axes, coefficients = plot_comparison(
             cat, reference, compare,
             error_allowed=args.error_allowed,
-            save_path=str(args.out),
         )
+        if not args.no_rasterize:
+            _rasterize_scatter(axes)
+        fig.savefig(args.out, dpi=args.dpi, bbox_inches="tight")
     plt.close(fig)
 
     for key, fit in coefficients.items():

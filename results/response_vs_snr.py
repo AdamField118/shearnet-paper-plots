@@ -1,30 +1,57 @@
 """fig:response_snr -- the measured responses against signal-to-noise.
 
-Left: the shear response :math:`R^{\\gamma}`, with :math:`R_{11}` and
-:math:`R_{22}` drawn separately, because :math:`D_4` equivariance constrains
-their difference not at all -- every group element acts on
-:math:`(e_1, e_2)` as :math:`{\\rm diag}(\\pm 1, \\pm 1)`, so conjugating
+WHERE THE DRAWING COMES FROM
+----------------------------
+The house rule is to take a plotter from, in order, ``s-Sayan/LITB-III-plots``,
+then ``superbit-collaboration/superbit-lensing``, then ShearNet's own
+``research/shear_bias/plots_from_fits.ipynb``, and only then write one.
+
+* LITB-III-plots has no response-versus-S/N figure. Its closest relative,
+  ``sec5/fig19_shear_bias.ipynb``, is shear bias against cluster *radius*.
+* ``superbit_lensing.plotter`` has no response-versus-S/N plotter either; its
+  binning helpers all live inside :class:`PSFLeakagePanelMaker` and bin against
+  PSF ellipticity.
+* ``plots_from_fits.ipynb`` has exactly this figure, twice: cell 22 draws
+  metacal :math:`R^{\\gamma}` against S/N and cell 26 draws metacal
+  :math:`R^{\\rm PSF}` the same way.
+
+So the drawing is that notebook's, copied rather than paraphrased:
+:func:`_bin_response`, :func:`_as_sorted` and :func:`style_log_x` are its cells
+verbatim, and :func:`draw` makes the same artist calls in the same order --
+shaded +/-1 SE band, dashed connecting line, open-circle error bars, the 1/2/5
+decade ticks.
+
+Three things differ from the notebook, each because this is one paper figure
+rather than two working PNGs:
+
+1. The two panels share a figure instead of being saved separately.
+2. The legend sits inside the axes. The notebook anchors it outside to the
+   right, which in a 1x2 grid lands on top of the neighbouring panel.
+3. The analytic target is drawn, and the y-range is widened to include it.
+
+WHY BOTH DIAGONALS
+------------------
+:math:`R_{11}` and :math:`R_{22}` are drawn separately because :math:`D_4`
+equivariance constrains their difference not at all -- every group element acts
+on :math:`(e_1, e_2)` as :math:`{\\rm diag}(\\pm 1, \\pm 1)`, so conjugating
 :math:`R` by it zeroes the off-diagonals and says nothing about the diagonal.
 Collapsing them to one curve would hide the one thing the architecture cannot
-give you.
-
-Right: the PSF response :math:`R^{\\rm PSF}`, whose correct value is zero at
-every signal-to-noise, so the horizontal line is the target and not a reference.
+give you. (Cell 22 draws both; cell 26 draws only :math:`R^{\\rm PSF}_{11}`,
+and is extended here to the second diagonal in cell 22's own style.)
 
 The dashed line on the left is the analytic ensemble target. It is **1**, not
 :math:`1 - \\sigma_e^2`: the observed shape transforms as
 :math:`(\\varepsilon + \\gamma)/(1 + \\bar\\gamma\\varepsilon)`, giving
 :math:`R_{11} = 1 - \\varepsilon_1^2 + \\varepsilon_2^2` per object, whose mean
 over an isotropic population is exactly 1. The familiar :math:`1 - \\sigma_e^2`
-belongs to the distortion convention and does not transfer.
+belongs to the distortion convention and does not transfer. On the right the
+target is zero at every signal-to-noise, so that line is the target and not a
+reference.
 
-Styling comes from ``superbit_lensing.plotter.pub_rc`` so this figure matches
-the ones that package draws. There is no response-versus-S/N plotter in
-``superbit_lensing`` to import, so the axes are built here; the binning and the
-jackknife reuse :mod:`paper_numbers`.
+Styling is ``superbit_lensing.plotter.pub_rc``, as every other figure here.
 
     python response_vs_snr.py --fits ../evaluations/fourth.fits
-    python response_vs_snr.py --fits ../evaluations/fourth.fits --nbins 8 --cut both
+    python response_vs_snr.py --fits ../evaluations/fourth.fits --nbins 15 --cut both
 """
 
 from __future__ import annotations
@@ -42,58 +69,113 @@ import numpy as np
 
 from evaluation_fits import Evaluation
 from plotstyle import tex_available, warn_once
-from paper_numbers import DEFAULT_NJACK, _jackknife_error, _pair_tables, _ring_mean
+from paper_numbers import _pair_tables
 from response_diagnostics import _matrix_column
 
 #: The analytic ensemble target for each panel, per the module docstring.
 TARGETS = {"gamma": 1.0, "psf": 0.0}
 
-STYLE = {
-    ("shearnet", "11"): dict(color="#4C72B0", marker="o", ls="-"),
-    ("shearnet", "22"): dict(color="#4C72B0", marker="s", ls="--"),
-    ("ngmix", "11"): dict(color="#DD8452", marker="o", ls="-"),
-    ("ngmix", "22"): dict(color="#DD8452", marker="s", ls="--"),
+#: plots_from_fits.ipynb cell 2, verbatim: (R_11 colour, R_22 colour).
+COLORS = {
+    "ngmix": ("#3B4CC0", "#B40426"),
+    "shearnet": ("#2ca02c", "#ff7f0e"),
 }
 
 
-def binned_response(evaluation, estimator, template, key, nbins, njack, mask=None):
-    """``[(s2n_centre, {entry: (value, error)}, n)]`` in equal-count bins."""
+# ---------------------------------------------------------------------------
+# plots_from_fits.ipynb cell 22, verbatim. Do not paraphrase these.
+# ---------------------------------------------------------------------------
+
+def _bin_response(r_arr, snr_arr, n_bins=25):
+    valid = np.isfinite(r_arr) & np.isfinite(snr_arr) & (snr_arr > 0)
+    r, s = r_arr[valid], snr_arr[valid]
+    edges = np.percentile(s, np.linspace(0, 100, n_bins + 1))
+    idx = np.digitize(s, edges)
+    centers, meds, errs = [], [], []
+    for i in range(1, len(edges)):
+        mask = idx == i
+        if mask.sum() > 0:
+            centers.append(np.median(s[mask]))
+            meds.append(np.median(r[mask]))
+            errs.append(np.std(r[mask]) / np.sqrt(mask.sum()))
+    return np.array(centers), np.array(meds), np.array(errs)
+
+
+def _as_sorted(x, y, e):
+    x, y, e = np.asarray(x), np.asarray(y), np.asarray(e)
+    m = np.isfinite(x) & np.isfinite(y) & np.isfinite(e)
+    x, y, e = x[m], y[m], e[m]
+    s = np.argsort(x)
+    return x[s], y[s], e[s]
+
+
+def style_log_x(ax, xlo, xhi):
+    import matplotlib.ticker as mticker
+
+    ax.set_xscale("log")
+    ax.set_xlim(xlo, xhi)
+
+    decades = np.arange(
+        np.floor(np.log10(xlo)),
+        np.ceil(np.log10(xhi)) + 1,
+    )
+    ticks = np.sort(np.concatenate([
+        multiplier * 10.0**decades
+        for multiplier in (1, 2, 5)
+    ]))
+    ticks = ticks[(ticks >= xlo) & (ticks <= xhi)]
+
+    # Keep at most eight labeled ticks.
+    if len(ticks) > 8:
+        ticks = ticks[::int(np.ceil(len(ticks) / 8))]
+
+    ax.xaxis.set_major_locator(mticker.FixedLocator(ticks))
+    ax.xaxis.set_major_formatter(
+        mticker.FuncFormatter(lambda x, _: f"{x:g}")
+    )
+    ax.xaxis.set_minor_locator(
+        mticker.LogLocator(base=10, subs=np.arange(2, 10) * 0.1)
+    )
+    ax.xaxis.set_minor_formatter(mticker.NullFormatter())
+
+    ax.tick_params(
+        axis="x",
+        which="major",
+        labelsize=10,
+        labelrotation=0,
+        pad=6,
+    )
+    ax.tick_params(which="both", direction="out", top=False, right=False)
+
+
+# ---------------------------------------------------------------------------
+
+
+def response_arrays(evaluation, estimator, template, key, mask=None):
+    """``(s2n, {'11': R11, '22': R22})`` per object, or ``None`` if absent.
+
+    The response is the mean of the +gamma and -gamma measurements of the same
+    galaxy, which is the same quantity the notebook reads off ``TAB_P`` alone
+    with half the variance, and it is what ``tab:response-diag`` already uses.
+    ``_matrix_column`` averages over the ring stations.
+    """
     plus, minus = _pair_tables(evaluation, component=0)
     up, down = (_matrix_column(plus, template, estimator),
                 _matrix_column(minus, template, estimator))
-    if up is None or down is None:
-        return []
+    if up is None or down is None or key not in plus.colnames:
+        return None
     matrix = 0.5 * (up + down)
-
-    if key not in plus.colnames:
-        return []
     s2n = np.asarray(plus[key], dtype=float)
 
     keep = np.isfinite(matrix).all(axis=(1, 2)) & np.isfinite(s2n)
     if mask is not None:
         keep &= mask
-    index = np.flatnonzero(keep)
-    index = index[np.argsort(s2n[index])]
-    if len(index) < nbins * njack:
-        nbins = max(1, len(index) // max(njack, 1))
-    if nbins < 1:
-        return []
-
-    edges = np.linspace(0, len(index), nbins + 1).astype(int)
-    out = []
-    for i in range(nbins):
-        selected = index[edges[i]:edges[i + 1]]
-        if len(selected) < njack:
-            continue
-        entries = {}
-        for a, b, name in ((0, 0, "11"), (1, 1, "22")):
-            values = matrix[selected, a, b]
-            entries[name] = (float(values.mean()), _jackknife_error(values, njack))
-        out.append((float(np.median(s2n[selected])), entries, len(selected)))
-    return out
+    if not keep.any():
+        return None
+    return s2n[keep], {"11": matrix[keep, 0, 0], "22": matrix[keep, 1, 1]}
 
 
-def draw(evaluation, estimators, *, nbins, njack, key, mask, out_path):
+def draw(evaluation, estimators, *, nbins, key, mask, out_path):
     from superbit_lensing.plotter import pub_rc
 
     import matplotlib.pyplot as plt
@@ -106,38 +188,67 @@ def draw(evaluation, estimators, *, nbins, njack, key, mask, out_path):
         rc = {**rc, "text.usetex": False}
 
     panels = (
-        ("gamma", "Rgamma_{est}_metacal", r"$R^{\gamma}$"),
-        ("psf", "Rpsf_{est}_metacal", r"$R^{\rm PSF}$"),
+        ("gamma", "Rgamma_{est}_metacal", r"Metacal $R^{\gamma}$",
+         r"Dilate/metacal $R^\gamma$ vs S/N", r"R^{\gamma}"),
+        ("psf", "Rpsf_{est}_metacal", r"Metacal $R^{\rm PSF}$",
+         r"Dilate/metacal $R^{\rm PSF}$ vs S/N", r"R^{\rm PSF}"),
     )
     with plt.rc_context(rc):
-        fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-        for ax, (panel, template, ylabel) in zip(axes, panels):
+        fig, axes = plt.subplots(1, 2, figsize=(12, 3.75),
+                                 constrained_layout=True)
+        for ax, (panel, template, ylabel, title, symbol) in zip(axes, panels):
             target = TARGETS[panel]
-            drew = False
+            # The notebook's y-range is set by the data; the target line has to
+            # be inside it or the one horizontal reference in the figure is
+            # cropped away.
+            ymin, ymax = target, target
+            all_x = []
             for estimator in estimators:
-                points = binned_response(evaluation, estimator, template, key,
-                                         nbins, njack, mask)
-                for entry in ("11", "22"):
-                    if not points:
+                arrays = response_arrays(evaluation, estimator, template, key,
+                                         mask)
+                if arrays is None:
+                    continue
+                s2n, components = arrays
+                for entry, color in zip(("11", "22"),
+                                        COLORS.get(estimator, ("C0", "C1"))):
+                    x, y, e = _as_sorted(*_bin_response(components[entry], s2n,
+                                                        nbins))
+                    if not len(x):
                         continue
-                    x = [p[0] for p in points]
-                    y = [p[1][entry][0] for p in points]
-                    e = [p[1][entry][1] for p in points]
-                    style = STYLE.get((estimator, entry), {})
-                    ax.errorbar(x, y, yerr=e, capsize=3, lw=1.4, ms=5,
-                                label=rf"{estimator} $R_{{{entry}}}$", **style)
-                    drew = True
+                    all_x.append(x)
+                    ax.fill_between(x, y - e, y + e, color=color, alpha=0.18,
+                                    linewidth=0)
+                    ax.plot(x, y, c=color, ls="--", lw=2.2, alpha=0.95)
+                    ax.errorbar(
+                        x, y, yerr=e, c=color, fmt="o", ms=4.0, mfc="white",
+                        mew=1.1, capsize=2.5, elinewidth=1.0, lw=0, alpha=0.95,
+                        label=fr"{estimator} ${symbol}_{{{entry}}}$",
+                    )
+                    ymin = min(ymin, np.nanmin(y - e))
+                    ymax = max(ymax, np.nanmax(y + e))
+
+            if not all_x:
+                ax.text(0.5, 0.5, "no response columns", ha="center",
+                        va="center", transform=ax.transAxes)
+                continue
+
             ax.axhline(target, color="k", ls=":", lw=1.4,
                        label=("analytic target" if panel == "gamma"
                               else "zero (the target)"))
-            ax.set_xscale("log")
-            ax.set_xlabel("signal-to-noise ratio")
+            ypad = 0.06 * (ymax - ymin) if np.isfinite(ymax - ymin) else 0.05
+            ax.set_ylim(ymin - ypad, ymax + ypad)
+
+            joined = np.concatenate(all_x)
+            joined = joined[np.isfinite(joined) & (joined > 0)]
+            log_pad = 0.15 * (np.log10(joined.max()) - np.log10(joined.min()))
+            xlo = 10 ** (np.log10(joined.min()) - log_pad)
+            xhi = 10 ** (np.log10(joined.max()) + log_pad)
+            style_log_x(ax, xlo, xhi)
+            ax.set_xlabel("S/N")
             ax.set_ylabel(ylabel)
-            ax.legend(frameon=False, ncol=2)
-            if not drew:
-                ax.text(0.5, 0.5, "no response columns", ha="center",
-                        va="center", transform=ax.transAxes)
-        fig.tight_layout()
+            ax.set_title(title, fontsize=12)
+            ax.legend(frameon=False, fontsize=10, loc="best")
+
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
@@ -148,8 +259,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--fits", required=True, type=Path)
     parser.add_argument("--estimators", nargs="*", default=None)
-    parser.add_argument("--nbins", type=int, default=8)
-    parser.add_argument("--njack", type=int, default=DEFAULT_NJACK)
+    parser.add_argument("--nbins", type=int, default=25,
+                        help="quantile bins in S/N (the notebook's value)")
     parser.add_argument("--s2n-column", default="s2n")
     parser.add_argument("--out", type=Path, default=Path("response_vs_snr.pdf"))
     parser.add_argument("--cut", choices=("none", "superbit", "truth", "both"),
@@ -185,8 +296,8 @@ def main(argv=None) -> int:
         if args.cut in ("superbit", "both"):
             mask &= paired_mask(plus, minus, "superbit")
 
-    path = draw(evaluation, estimators, nbins=args.nbins, njack=args.njack,
-                key=args.s2n_column, mask=mask, out_path=args.out)
+    path = draw(evaluation, estimators, nbins=args.nbins, key=args.s2n_column,
+                mask=mask, out_path=args.out)
     print(f"wrote {path}")
     return 0
 
