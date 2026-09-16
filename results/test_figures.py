@@ -168,6 +168,90 @@ def test_ngmix_leakage_excludes_rpsf():
     assert "rpsf" not in reported_leakage_shape("shearnet")
 
 
+# --------------------------------------------------------------------------
+# 3b. dividing by a constant must not hide the constant's own error
+# --------------------------------------------------------------------------
+
+def test_rgamma_m1_error_includes_the_response_uncertainty(tmp_path):
+    """Under ``rgamma`` every object is divided by ONE ensemble R.
+
+    The delete-one-block jackknife then sees a denominator that never changes,
+    cancels it exactly, and reports the numerator's scatter alone. R is measured
+    rather than known -- on the real UT4 run it is 0.9073 +/- 0.0006, whose
+    contribution (+-0.67e-3) is LARGER than the jackknife error it was quoted
+    with (+-0.32e-3). Worse, the ngmix column's SUMMARY error does carry its
+    response uncertainty, so the two columns' error bars meant different things.
+    """
+    pytest.importorskip("astropy")
+    make_fixture = pytest.importorskip("make_fixture")
+
+    out = tmp_path / "evaluation.fits"
+    make_fixture.main(["--out", str(out), "--n", "4000", "--seed", "3"])
+
+    from evaluation_fits import Evaluation
+    from paper_numbers import (_pair_tables, _ratio_with_jackknife,
+                               _ring_mean, _shape_column, ensemble_response,
+                               ensemble_response_error, m1_recomputed)
+
+    ev = Evaluation(out)
+    response_error = ensemble_response_error(ev, "shearnet")
+    if response_error is None:
+        pytest.skip("fixture carries no per-object R^gamma column")
+
+    m, combined = m1_recomputed(ev, "shearnet", "rgamma", njack=20)
+
+    # the numerator-only error, which is what the old code returned
+    plus, minus = _pair_tables(ev, component=0)
+    base = _shape_column(plus, "shearnet", "rgamma")
+    e_plus = _ring_mean(plus, base)[:, 0]
+    e_minus = _ring_mean(minus, base)[:, 0]
+    response = ensemble_response(ev, "shearnet", "metacal")[0]
+    good = np.isfinite(e_plus) & np.isfinite(e_minus)
+    shear = float(ev.header.get("SHEAR_TR", 0.01))
+    _, plain = _ratio_with_jackknife(
+        0.5 * (e_plus[good] - e_minus[good]),
+        np.full(int(good.sum()), response), shear, 20)
+
+    assert combined >= plain, "folding in an uncertainty cannot shrink the error"
+    expected = np.hypot(plain, (1.0 + m) * response_error / abs(response))
+    assert combined == pytest.approx(expected, rel=1e-9)
+
+
+# --------------------------------------------------------------------------
+# 4. a PSF source may be a directory, because the configs use one
+# --------------------------------------------------------------------------
+
+def _psf_properties():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "psf"))
+    import psf_properties
+
+    return psf_properties
+
+
+def test_a_directory_of_psf_models_resolves_to_one_of_them(tmp_path):
+    """paths.psfex_model_file is a file OR a directory, and UT1-UT4 use a directory.
+
+    ShearNet accepts both and draws a different one of the 50 SuperBIT models
+    per object; this script wants a single model, and used to raise
+    FileNotFoundError on a directory that plainly existed.
+    """
+    for name in ("b.psf", "a.psf", "c.psf"):
+        (tmp_path / name).write_bytes(b"")
+
+    resolve = _psf_properties().resolve_psf_model
+    assert resolve(tmp_path).name == "a.psf", "sorted, not filesystem order"
+    assert resolve(tmp_path, index=2).name == "c.psf"
+    assert resolve(tmp_path / "b.psf").name == "b.psf", "a file still passes through"
+
+
+def test_a_directory_with_no_models_says_so(tmp_path):
+    resolve = _psf_properties().resolve_psf_model
+    with pytest.raises(FileNotFoundError, match="no .psf files"):
+        resolve(tmp_path)
+    with pytest.raises(FileNotFoundError, match="not found"):
+        resolve(tmp_path / "absent")
+
+
 def test_the_x_axis_is_log_with_one_two_five_ticks():
     fig, ax = plt.subplots()
     style_log_x(ax, 5.0, 2000.0)

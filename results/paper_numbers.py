@@ -302,6 +302,33 @@ def ensemble_response(evaluation, estimator: str, correction: str):
     return response
 
 
+def ensemble_response_error(evaluation, estimator: str, entry: str = "11",
+                            njack: int = DEFAULT_NJACK, mask=None):
+    """Jackknife error on the ensemble ``R^gamma``, or None if unavailable.
+
+    SUMMARY stores ``R11``/``R22`` but no uncertainty on them, so this
+    re-measures it from the per-object columns -- the same jackknife over the
+    same ring-averaged matrix that fills ``tab:response-diag``, via
+    ``response_diagnostics.measure``, so the two cannot disagree.
+
+    It exists because dividing by a constant hides its own uncertainty.
+    ``m1_recomputed`` under ``rgamma`` divides every object by ONE ensemble
+    number, so the delete-one-block jackknife over objects sees a denominator
+    that never changes and reports only the scatter in the numerator. For
+    ShearNet on UT4 that is +-0.32e-3, while R = 0.9073 +- 0.0006 contributes
+    (1+m) * 0.0006/0.9073 = +-0.67e-3 on its own -- twice as much as the error
+    actually quoted.
+    """
+    from response_diagnostics import measure
+
+    result = measure(evaluation, estimator, "Rgamma_{est}_metacal",
+                     njack=njack, mask=mask)
+    if result is None or entry not in result:
+        return None
+    error = result[entry][1]
+    return float(error) if np.isfinite(error) else None
+
+
 def m1_recomputed(evaluation, estimator: str, correction: Optional[str] = None,
                   njack: int = DEFAULT_NJACK, mask=None) -> tuple:
     """``(m1, m1_err)`` from the per-object columns, on a chosen subsample.
@@ -352,7 +379,23 @@ def m1_recomputed(evaluation, estimator: str, correction: Optional[str] = None,
     numerator = 0.5 * (e_plus[good] - e_minus[good])
     denominator = 0.5 * (r_plus[good] + r_minus[good])
     shear = float(evaluation.header.get("SHEAR_TR", 0.01))
-    return _ratio_with_jackknife(numerator, denominator, shear, njack)
+    m, error = _ratio_with_jackknife(numerator, denominator, shear, njack)
+
+    if correction == "rgamma":
+        # The denominator above is one constant, so the jackknife over objects
+        # cancels it exactly and the error it returns is the numerator's alone.
+        # R is measured, not known, and on these runs its uncertainty is the
+        # LARGER of the two -- so quoting without it understates the error on
+        # every ShearNet row, and by a different factor than the ngmix column,
+        # whose SUMMARY error does carry its response uncertainty. Two columns
+        # of error bars meaning different things is worse than either being big.
+        response_error = ensemble_response_error(evaluation, estimator,
+                                                 njack=njack, mask=mask)
+        if response_error is not None:
+            relative = response_error / abs(float(denominator[0]))
+            error = float(np.hypot(error, (1.0 + m) * relative))
+
+    return m, error
 
 
 def _ratio_with_jackknife(numerator, denominator, shear, njack):

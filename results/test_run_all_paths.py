@@ -102,6 +102,50 @@ def test_the_cut_reaches_every_deliverable_that_takes_one(tmp_path):
                 assert "--cut both" in line, f"{label} runs without the cut: {line}"
 
 
+def test_only_tab_timing_follows_timing_fits(tmp_path):
+    """The timing pass can live in its own run; nothing else may follow it there.
+
+    tab:timing reads INFERENC/NGMIX_SE from the header, which the fiducial run
+    does not carry when timing was a separate job -- so without --timing-fits it
+    read --fits and printed ``\\pending``. With it, the other six deliverables
+    must STAY on the fiducial file, or the paper quietly reports two samples.
+    """
+    runs = tmp_path / "evaluations"
+    runs.mkdir()
+    (runs / "fourth.fits").write_bytes(b"")
+    (runs / "evaluation_timed.fits").write_bytes(b"")
+
+    result = _dry_run("--fits", "evaluations/fourth.fits",
+                      "--timing-fits", "evaluations/evaluation_timed.fits",
+                      cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+
+    seen = set()
+    for line in result.stdout.splitlines():
+        if "tab:timing" in line:
+            seen.add("timing")
+            assert "evaluation_timed.fits" in line
+        elif any(lbl in line for lbl in
+                 ("tab:response-diag", "fig:psf_leakage", "fig:snr_size",
+                  "fig:prediction-residuals", "fig:response_snr")):
+            seen.add("other")
+            assert "evaluation_timed.fits" not in line, (
+                f"a non-timing deliverable followed --timing-fits: {line}"
+            )
+            assert "fourth.fits" in line
+    assert seen == {"timing", "other"}, f"nothing was checked: {seen}"
+
+
+def test_a_missing_timing_fits_is_refused(tmp_path):
+    runs = tmp_path / "evaluations"
+    runs.mkdir()
+    (runs / "fourth.fits").write_bytes(b"")
+    result = _dry_run("--go", "--fits", "evaluations/fourth.fits",
+                      "--timing-fits", "evaluations/typo.fits", cwd=tmp_path)
+    assert result.returncode == 1
+    assert "--timing-fits does not exist" in result.stderr
+
+
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash absent")
 def test_the_driver_is_syntactically_valid():
     assert subprocess.run(["bash", "-n", str(SCRIPT)]).returncode == 0

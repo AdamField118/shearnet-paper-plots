@@ -21,6 +21,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GO=0
 FITS=""
 RUNS=""
+TIMING_FITS=""
 OUTDIR="$ROOT/output"
 CUT_ARGS=()
 TABLE_ARGS=()
@@ -33,6 +34,10 @@ Options:
   --go                  actually run (default is a dry run)
   --fits PATH           evaluation FITS for the fiducial run (UT4)
   --runs DIR            directory of per-run FITS, for tab:unit-test-bias
+  --timing-fits PATH    the run that carries the timing pass, for tab:timing.
+                        Only needed when timing lives in a SEPARATE file from
+                        --fits; without it tab:timing reads --fits, and a run
+                        with no timing pass in its header prints \pending.
   --out DIR             where figures and .tex fragments go (default: output/)
   --cut WHICH           none | superbit | truth | both  (passed to each script
                         that takes a sample cut)
@@ -63,6 +68,7 @@ while [[ $# -gt 0 ]]; do
         --go) GO=1; shift ;;
         --fits) FITS="$(abspath "$2")"; shift 2 ;;
         --runs) RUNS="$(abspath "$2")"; shift 2 ;;
+        --timing-fits) TIMING_FITS="$(abspath "$2")"; shift 2 ;;
         --out) OUTDIR="$(abspath "$2")"; shift 2 ;;
         --cut) CUT_ARGS+=(--cut "$2"); shift 2 ;;
         --min-resolution) CUT_ARGS+=(--min-resolution "$2"); shift 2 ;;
@@ -90,6 +96,15 @@ if [[ -n "$FITS" && ! -f "$FITS" ]]; then
 fi
 if [[ -n "$RUNS" && ! -d "$RUNS" ]]; then
     echo "--runs is not a directory: $RUNS" >&2
+    exit 1
+fi
+if [[ -n "$TIMING_FITS" && ! -f "$TIMING_FITS" ]]; then
+    echo "--timing-fits does not exist: $TIMING_FITS" >&2
+    parent="$(dirname "$TIMING_FITS")"
+    if [[ -d "$parent" ]]; then
+        echo "FITS files in $parent:" >&2
+        find -L "$parent" -maxdepth 1 -name "*.fits" -printf '  %f\n' 2>/dev/null | sort >&2
+    fi
     exit 1
 fi
 
@@ -135,7 +150,14 @@ fi
 if [[ -n "$FITS" ]]; then
     for entry in "${DELIVERABLES[@]}"; do
         IFS='|' read -r label dir script extra takes_cut <<< "$entry"
-        args=(--fits "$FITS")
+        # tab:timing reads a header the other deliverables do not care about, so
+        # the timing pass can live in its own run. Everything else stays on the
+        # fiducial file.
+        if [[ "$label" == "tab:timing" && -n "$TIMING_FITS" ]]; then
+            args=(--fits "$TIMING_FITS")
+        else
+            args=(--fits "$FITS")
+        fi
         # shellcheck disable=SC2206
         [[ -n "$extra" ]] && args+=($extra)
         if [[ -n "$takes_cut" && ${#CUT_ARGS[@]} -gt 0 ]]; then

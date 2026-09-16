@@ -17,29 +17,24 @@ $R^{\rm PSF}$ & \textsc{ngmix} & $+0.2814 \pm 0.0025$ & $+0.2685 \pm 0.0023$ & $
 % wrote /home/adfield/shearnet-paper-plots/output/tab_response_diag.tex
 
 === tab:timing ===
-% tab:timing from fourth.fits
+% tab:timing from evaluation_timed.fits
 % columns: method & wall-clock (s) & objects s^-1
 % objects measured: 200000
 % EXCLUDED for both methods: rendering, JAX compilation, and the
 % perturbed images used for the metacalibration responses.
-% rendering took 230.3 s and is not in the table.
-% NOT IN THIS FILE'S HEADER: ngmix (NGMIX_SE)
-\textsc{ShearNet}-D4 (1 GPU) & 22.82 & 8764 \\
-\textsc{ngmix} (CPU pool (18 cores)) & \pending & \pending \\
+% rendering took 263.4 s and is not in the table.
+\textsc{ShearNet}-D4 (1 GPU) & 22.84 & 8757 \\
+\textsc{ngmix} (CPU pool (18 cores)) & 387.95 & 516 \\
 \hline
-Ratio & & \pending \\
-
-% 1 field(s) absent -- rows emitted as \pending.
-% The header records what run.py measured; a number invented here
-% would describe whatever machine this script ran on.
+Ratio & & 17$\times$ \\
 % wrote /home/adfield/shearnet-paper-plots/output/tab_timing.tex
 
 === fig:psf_leakage ===
 <Evaluation fourth.fits: HDUs=['PRIMARY', 'TAB_P', 'TAB_M', 'TAB_P2', 'TAB_M2', 'LEAKAGE', 'SUMMARY', 'BINNED', 'LEAKSUM'], estimators=['shearnet', 'ngmix'], SNC=4>
 comparing: ['shearnet', 'ngmix']
-[WROTE] /tmp/tmp48hf_32t/panels_shearnet.fits  (2 extensions)
+[WROTE] /tmp/tmplosevxs5/panels_shearnet.fits  (2 extensions)
   ShearNet-D4 [raw_rgamma]: alpha1 = -0.0104 +/- 0.0006, alpha2 = -0.0120 +/- 0.0009
-[WROTE] /tmp/tmp48hf_32t/panels_ngmix.fits  (2 extensions)
+[WROTE] /tmp/tmplosevxs5/panels_ngmix.fits  (2 extensions)
   NGmix [noshear_rgamma]: alpha1 = +0.0167 +/- 0.0023, alpha2 = +0.0751 +/- 0.0019
 [SAVED] /home/adfield/shearnet-paper-plots/figures/psf_leakage.pdf
 wrote /home/adfield/shearnet-paper-plots/figures/psf_leakage.pdf
@@ -84,10 +79,10 @@ wrote /home/adfield/shearnet-paper-plots/output/response_vs_snr.pdf
 % sample cut: none
 % m1 from: ngmix -> summary, shearnet -> recomputed  (recomputed = from the per-object columns)
 % columns: shearnet m1, shearnet c2, ngmix m1, ngmix c2
-UT1 & $+17.88 \pm 0.04$ & $-43.53 \pm 1.56$ & $+16.10 \pm 3.57$ & $+24.78 \pm 2.06$ \\
-UT2 & $-9.77 \pm 0.06$ & $+0.76 \pm 2.15$ & $+16.32 \pm 6.21$ & $+907.69 \pm 5.19$ \\
-UT3 & $+8.87 \pm 0.20$ & $-2.33 \pm 5.89$ & $+109.01 \pm 8.27$ & $+1180.51 \pm 10.18$ \\
-\textbf{UT4} & $+8.38 \pm 0.32$ & $-4.86 \pm 8.29$ & $+165.27 \pm 13.81$ & $+1176.61 \pm 13.20$ \\
+UT1 & $+17.88 \pm 0.13$ & $-43.53 \pm 1.56$ & $+16.10 \pm 3.57$ & $+24.78 \pm 2.06$ \\
+UT2 & $-9.77 \pm 0.23$ & $+0.76 \pm 2.15$ & $+16.32 \pm 6.21$ & $+907.69 \pm 5.19$ \\
+UT3 & $+8.87 \pm 0.46$ & $-2.33 \pm 5.89$ & $+109.01 \pm 8.27$ & $+1180.51 \pm 10.18$ \\
+\textbf{UT4} & $+8.38 \pm 0.77$ & $-4.86 \pm 8.29$ & $+165.27 \pm 13.81$ & $+1176.61 \pm 13.20$ \\
 
 
 Done. Every deliverable produced. Output in /home/adfield/shearnet-paper-plots/output

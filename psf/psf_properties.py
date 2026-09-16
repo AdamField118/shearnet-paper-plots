@@ -32,6 +32,12 @@ Usage
     # or point straight at a PSFEx model
     python psf_properties.py --psf /path/to/model.psf
 
+    # a DIRECTORY of models is fine too -- the unit-test configs use one, because
+    # training draws a different one of the 50 SuperBIT models per object. One is
+    # chosen (sorted order, --psf-index to change it) and its name is printed,
+    # because the figure shows a representative and the caption must say which.
+    python psf_properties.py --psf ../psf_data/emp_psfs_best/psfex-output
+
     # the moment maps are slow; cache and reuse them
     python psf_properties.py --psf model.psf --cache maps/psf_maps.npz
     python psf_properties.py --cache maps/psf_maps.npz          # replot, no recompute
@@ -105,7 +111,52 @@ def psfex_from_config(config_path: Path) -> str:
     return psf
 
 
-def build_maps(psf_file, cache=None, recompute=False, **kwargs):
+def resolve_psf_model(psf_file, index=0):
+    """One PSFEx ``.psf`` file, given either a file or a directory of them.
+
+    ``paths.psfex_model_file`` is a file OR a directory: ShearNet accepts both
+    (``shearnet.core.dataset.generate_dataset``), and the unit-test configs use a
+    directory, drawing a different one of the 50 SuperBIT models per object.
+    ``compute_em5_psfex_maps`` maps a single model, so one has to be chosen, and
+    the figure is a REPRESENTATIVE of the training set rather than "the" PSF --
+    the caption has to say which file it is for that to mean anything, so the
+    chosen path is printed and returned.
+
+    The sort matters and is not cosmetic. It matches
+    ``shearnet.core.dataset.search_psf_files``, which sorts because the list
+    index is part of the seeded per-object draw; bare ``glob`` returns filesystem
+    order (emp47, emp48, emp26, emp11, ... on this set), so an unsorted pick
+    would name a different model on a different machine.
+    """
+    psf_path = Path(psf_file).expanduser()
+    if psf_path.is_file():
+        return psf_path
+
+    if psf_path.is_dir():
+        models = sorted(psf_path.glob("*.psf"))
+        if not models:
+            raise FileNotFoundError(
+                f"{psf_path} is a directory with no .psf files in it"
+            )
+        if not 0 <= index < len(models):
+            raise IndexError(
+                f"--psf-index {index} is out of range: {psf_path} holds "
+                f"{len(models)} models (0 to {len(models) - 1})"
+            )
+        chosen = models[index]
+        print(f"{psf_path} holds {len(models)} PSFEx models; using index "
+              f"{index} of {len(models) - 1}: {chosen.name}")
+        print(f"  -> name this file in the figure caption. Other models are "
+              f"reachable with --psf-index, or --psf for a specific path.")
+        return chosen
+
+    raise FileNotFoundError(
+        f"PSFEx model not found: {psf_path}\n"
+        "This takes a .psf file or a directory containing them."
+    )
+
+
+def build_maps(psf_file, cache=None, recompute=False, psf_index=0, **kwargs):
     """Return EM5/PSFEx moment maps, computing them only when necessary.
 
     The computation fits adaptive moments and an EM5 mixture at every grid point,
@@ -124,9 +175,7 @@ def build_maps(psf_file, cache=None, recompute=False, **kwargs):
             "(or --cache pointing at an existing .npz)."
         )
 
-    psf_path = Path(psf_file).expanduser()
-    if not psf_path.is_file():
-        raise FileNotFoundError(f"PSFEx model not found: {psf_path}")
+    psf_path = resolve_psf_model(psf_file, index=psf_index)
 
     print(f"computing moment maps from {psf_path} (this is the slow step)")
     maps = compute_em5_psfex_maps(str(psf_path), **kwargs)
@@ -144,10 +193,18 @@ def main(argv=None):
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     src = p.add_argument_group("PSF source (one of)")
-    src.add_argument("--psf", default=None, help="path to a PSFEx .psf model")
+    src.add_argument("--psf", default=None,
+                     help="a PSFEx .psf model, or a directory of them")
     src.add_argument(
         "--config", default=None,
         help="ShearNet config yaml; reads paths.psfex_model_file from it",
+    )
+    src.add_argument(
+        "--psf-index", type=int, default=0,
+        help="which model to use when the source is a directory, in sorted "
+             "order (the same order ShearNet draws from). Default 0. The figure "
+             "shows ONE model out of the training set, so the caption has to "
+             "name it -- the chosen filename is printed.",
     )
 
     p.add_argument(
@@ -184,6 +241,7 @@ def main(argv=None):
         psf_file,
         cache=args.cache,
         recompute=args.recompute,
+        psf_index=args.psf_index,
         step=args.step,
         image_xsize=args.image_xsize,
         image_ysize=args.image_ysize,
