@@ -1,0 +1,10 @@
+% tab:timing from evaluation_timed.fits
+% columns: method & wall-clock (s) & objects s^-1
+% objects measured: 200000
+% EXCLUDED for both methods: rendering, JAX compilation, and the
+% perturbed images used for the metacalibration responses.
+% rendering took 263.4 s and is not in the table.
+\textsc{ShearNet}-D4 (1 GPU) & 22.84 & 8757 \\
+\textsc{ngmix} (CPU pool (18 cores)) & 387.95 & 516 \\
+\hline
+Ratio & & 17$\times$ \\

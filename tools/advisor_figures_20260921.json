@@ -1,0 +1,15 @@
+{
+  "sources": {
+    "shearnet_arch_d4_forward.pdf": "bd32c7a02a00b94040904ce3623dbb778ab252bb9a04f0bb8a8e50ce22e47e9a",
+    "psf_properties.pdf": "8f062bab93593255ef76eb8929d67b5e3c3716c13e49d9e8fd02d7fb2d307601",
+    "response_vs_snr.pdf": "1b3d15d959b8c58c93a44477506809b575950e981d2c6042ccdd3df160bf2814",
+    "psf_leakage.pdf": "0e4c15c2fa646122f5ae33e4753910771446e7c1294519ffe72d4d55990bcf94"
+  },
+  "rendered_rgb_sha256": {
+    "shearnet_arch_d4_forward.pdf": "f1cc7f4ca3ec03790740e5bbd52705399203e519f52b01e9956e9ea4bd94a1d6",
+    "psf_properties.pdf": "3df789797a008a80bf73d0d53333701d5103cf1885800c0636c4a8a2848d66d0",
+    "response_vs_snr.pdf": "c2fab4ba4810f03b7147178b71679257c9b6fbe16838035f9deafd63b4ac2b5a",
+    "psf_leakage.pdf": "5cb0d067a9e4c122ecb77dc8b1e696fed0ebfa0243857804a108d6698115638d",
+    "unit_test_bias.pdf": "fb3a4ecab40edb6ba175862c61ceee08016b813866784e7e041b680cd3eac4c5"
+  }
+}

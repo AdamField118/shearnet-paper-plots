@@ -1,7 +1,8 @@
-"""PSF leakage figure: mean recovered shear against PSF ellipticity.
+"""PSF leakage figure: median centered shape against PSF ellipticity.
 
-Each panel plots the mean recovered shear component against the corresponding PSF
-ellipticity component, binned in e^PSF, for every estimator in the run. The fitted
+Each panel plots the median centered shape against the corresponding PSF ellipticity,
+binned in e^PSF. Labels distinguish ellipticity from response-corrected shear units.
+The global mean is subtracted before binning. The fitted
 slope is the leakage coefficient alpha; an ideal estimator is flat.
 
 Per the repository house rule, the binning, the jackknife alpha/beta fit and the
@@ -21,7 +22,8 @@ By default each estimator is fitted on the shape its alpha is *quoted* on --
 :func:`_reported_shape`, read from ``paper_numbers`` so this figure cannot drift
 from ``tab:unit-test-bias``. Those differ by estimator: ShearNet is reported under
 ``rgamma`` (the raw image, metacal never touching it, divided by its ensemble shear
-response) and ngmix under the full ``metacal``. So there is no single shape that
+response) and ngmix under ``noshear_rgamma`` (the reconvolved image divided by
+its ensemble shear response, without the PSF-response subtraction). There is no single shape that
 makes the figure and the text agree, and taking one for both would silently put a
 different number in the caption than in the table.
 
@@ -55,6 +57,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from evaluation_fits import DISPLAY_NAME, Evaluation  # noqa: E402
+from paper_labels import label_psf_leakage
 
 
 def _import_superbit():
@@ -266,9 +269,10 @@ def main(argv=None):
             label_nfw=DISPLAY_NAME.get(chosen[0], chosen[0]),
             label_nonfw=DISPLAY_NAME.get(chosen[1], chosen[1]),
             components=(1, 2),
-            save_path=str(stem.with_suffix(f".{args.format[0]}")),
+            save_path=None,
         )
         fig = plt.gcf()
+        label_psf_leakage(fig, shapes=[args.shape or _reported_shape(e) for e in chosen])
         for fmt in args.format:
             path = stem.with_suffix(f".{fmt}")
             fig.savefig(path, dpi=args.dpi, bbox_inches="tight")

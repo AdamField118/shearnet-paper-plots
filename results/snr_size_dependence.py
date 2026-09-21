@@ -1,9 +1,8 @@
-"""Multiplicative bias as a function of galaxy S/N and half-light radius.
+"""Multiplicative bias as a function of galaxy SNR and half-light radius.
 
 Each panel bins the held-out population along one axis and recomputes ``m`` inside
 each bin, so the points measure a population dependence of the estimator rather
-than a mismatch against the global response. The shaded band is the Stage IV
-requirement, |m| <= 1e-3.
+than a mismatch against the global response. Only a zero-bias reference line is drawn.
 
 Where the numbers come from
 ---------------------------
@@ -44,13 +43,11 @@ from astropy.table import Table
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from evaluation_fits import DISPLAY_NAME, Evaluation  # noqa: E402
 
-#: Stage IV multiplicative-bias requirement.
-STAGE_IV_M = 1e-3
 
 #: Per-object columns we can bin along, with axis labels.
 BIN_AXES = {
-    "s2n": {"label": r"galaxy S/N", "log": True},
-    "hlr_th": {"label": r"half-light radius [arcsec]", "log": False},
+    "s2n": {"label": r"galaxy SNR", "log": True},
+    "hlr_th": {"label": r"$r_{1/2}$ [arcsec]", "log": False},
     "flux_th": {"label": r"flux [counts]", "log": True},
 }
 
@@ -162,8 +159,6 @@ def _panel(ax, ev, estimators, bin_by, *, nbins, component, njac, mask=None):
         print(f"  {estimator:9s} {bin_by:8s} m range "
               f"[{np.nanmin(m[:n]):+.2e}, {np.nanmax(m[:n]):+.2e}]")
 
-    ax.axhspan(-STAGE_IV_M, STAGE_IV_M, color="0.75", alpha=0.45, zorder=0,
-               label=r"Stage IV  $|m|\leq10^{-3}$")
     ax.axhline(0.0, color="0.4", lw=0.9, ls=":", zorder=1)
     if axis["log"]:
         ax.set_xscale("log")
@@ -180,7 +175,7 @@ def main(argv=None):
                    help="per-object columns to bin along, one panel each")
     p.add_argument("--estimators", nargs="+", default=None)
     p.add_argument("--nbins", type=int, default=8)
-    p.add_argument("--component", type=int, default=0)
+    p.add_argument("--component", type=int, default=0, choices=(0, 1))
     p.add_argument("--njac", type=int, default=20)
     p.add_argument("-o", "--out", default=None,
                    help="output stem. Default ../figures/snr_size_dependence")

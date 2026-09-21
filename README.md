@@ -4,6 +4,14 @@ Figure-generation code for the ShearNet paper. Each subdirectory produces one
 family of figures; rendered output is written to `figures/` (git-ignored, so the
 repo stays free of binary churn — regenerate rather than commit).
 
+## Manuscript figure notation
+
+The generators apply the audited manuscript's notation to returned Matplotlib text
+artists, after directly calling the upstream plotters. Numerical calculations and
+the current branch's binning, corrections, and scatter rasterization are retained.
+See [PAPER_FIGURES.md](PAPER_FIGURES.md) for regeneration commands and the separate
+checksum-verified replay of the five current manuscript figures.
+
 ## House rule: never reimplement a plot that already exists
 
 **Any plot one of our own repos already knows how to make is made by calling that
@@ -37,7 +45,7 @@ The practical consequence is that upstream's choices win even when they are
 inconvenient — see the note on hard-coded colour limits under `psf/` below. If one of
 those choices needs to change, change it upstream so both papers move together.
 
-### The one thing we change after the fact
+### Postprocessing returned artists
 
 Upstream plotters were written for catalogues of a few thousand objects and draw
 every point as a vector path. At our sizes (2×10⁵ per panel) that is a PDF no viewer
@@ -49,6 +57,10 @@ piece of text — is left as vectors
 one property on the artists upstream handed back. It reimplements nothing, and it is
 what LITB-III-plots does with its own large scatters (`sec1/fig1_footprint.ipynb`,
 `sec2/sec2.3/fig2_target_footprints.py`).
+
+Manuscript label edits also act on the returned artists; they do not wrap or
+reimplement an upstream plotter. The fit coefficients and error estimates still
+come from the upstream call.
 
 ## ShearNet dependency
 

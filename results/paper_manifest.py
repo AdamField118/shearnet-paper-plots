@@ -1,6 +1,6 @@
 """Every float and every panel the paper needs, and what produces it.
 
-The paper has eighteen labelled figures and tables. Some are drawn from the
+The current paper has five figures and three tables. Some are drawn from the
 evaluation FITS, some from training logs, some are schematics with no data at
 all, and two tables were cut from the campaign. Without one list it is not
 possible to answer the only question that matters before submission -- is
@@ -57,48 +57,32 @@ class Item:
 #: The paper's labels, in the order they appear. Keep this list in step with
 #: main.tex -- it is the definition of "what the paper needs".
 MANIFEST = [
-    # --- measured from an evaluation FITS -------------------------------
-    Item("tab:unit-test-bias", "fits", "results/paper_tables.py",
-         "m1 and c2 for UT1-4, ShearNet and ngmix"),
-    Item("tab:response-diag", "fits", "results/response_diagnostics.py",
-         "R^gamma and R^PSF of the fiducial model, jackknife N=20"),
-    Item("tab:timing", "fits", "results/timing_table.py",
-         "shape-inference throughput; GPU vs CPU pool"),
-    Item("fig:psf_leakage", "fits", "results/psf_leakage.py",
-         "mean shear vs e_PSF; superbit_lensing draws it"),
-    Item("fig:snr_size", "fits", "results/snr_size_dependence.py",
-         "m against S/N and against half-light radius"),
-    Item("fig:prediction-residuals", "fits", "results/prediction_residuals.py",
-         "residual predictions on UT4; superbit_lensing.plot_comparison"),
-    Item("fig:response_snr", "fits", "results/response_vs_snr.py",
-         "R^gamma and R^PSF against S/N, against the analytic target"),
-
-    # --- not from the benchmark -----------------------------------------
-    Item("fig:response-training", "logs", None,
-         "the six response penalties per epoch; from training records"),
-    Item("fig:robustness", "logs", None,
-         "bias under departures from the training distribution; needs its own runs"),
-    Item("fig:psf-properties", "static", "psf/psf_properties.py",
-         "PSFEx model properties; from the PSF file, not a run"),
-    Item("fig:d4", "static", None, "architecture schematic (shearnet_arch_d4_forward.pdf)"),
-    Item("fig:nonlinear", "static", "architecture/shearnet_d4_architecture_4plots.py",
-         "nonlinear response demo on synthetic profiles"),
-    Item("fig:rotation", "static", "architecture/shearnet_d4_architecture_4plots.py",
-         "shape transformation under rotation"),
-    Item("tab:unit-tests", "static", None,
-         "the ladder description; hand-written, no measurement"),
-
-    # --- cut from the paper ---------------------------------------------
-    Item("tab:abl-main", "cut", None, "ablation campaign dropped"),
-    Item("tab:abl-secondary", "cut", None, "ablation campaign dropped"),
-    Item("tab:hpsearch", "cut", None, "reduced to a sentence"),
-    Item("tab:hpsearch-results", "cut", None, "reduced to a sentence"),
+    Item("fig:d4", "static", "architecture/shearnet_d4_architecture_4plots.py", "architecture"),
+    Item("fig:psf-properties", "static", "psf/psf_properties.py", "observed PSF row only"),
+    Item("fig:response_snr", "fits", "results/response_vs_snr.py", "diagonal responses vs SNR"),
+    Item("fig:unit-test-bias", "fits", "results/unit_test_bias.py", "m and c vs UT1--UT4"),
+    Item("fig:psf-leakage", "fits", "results/psf_leakage.py", "raw shapes: --shape raw"),
+    Item("tab:unit-tests", "static", None, "simulation definitions"),
+    Item("tab:response-diag", "fits", "results/response_diagnostics.py", "mean response matrices"),
+    Item("tab:timing", "fits", "results/timing_table.py", "original-image timing"),
+    Item("fig:prediction-residuals", "cut", None, "replaced by the UT bias comparison"),
+    Item("fig:snr-size", "cut", None, "removed at advisor review"),
+    Item("tab:abl-main", "cut", None, "no ablation claims"),
+    Item("tab:abl-secondary", "cut", None, "no ablation claims"),
 ]
 
 #: Scripts that are tools, not paper deliverables. They must not be swept up by
 #: a driver that runs every .py with --fits: two of them take different
 #: arguments entirely and would fail the run.
 NOT_DELIVERABLES = {
+    "results/paper_tables.py": "optional numeric companion to the bias figure",
+    "results/prediction_residuals.py": "optional diagnostic, removed from manuscript",
+    "results/snr_size_dependence.py": "optional diagnostic, removed from manuscript",
+    "results/paper_labels.py": "notation helper",
+    "results/unit_test_bias_test.py": "bias-figure tests",
+    "results/test_figures.py": "figure and statistic tests",
+    "tools/reproduce_advisor_figures.py": "checked archival replay of supplied figures",
+
     "results/evaluation_fits.py": "library: the FITS reader",
     "results/paper_numbers.py": "library: m, c and alpha",
     "results/selection.py": "library: the sample cut",

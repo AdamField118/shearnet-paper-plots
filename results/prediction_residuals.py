@@ -1,4 +1,4 @@
-"""fig:prediction-residuals -- residual shear predictions on the held-out set.
+"""fig:prediction-residuals -- residual ellipticity predictions on the held-out set.
 
 Per the repository house rule, the drawing and the fit are done by
 ``superbit_lensing``:
@@ -8,7 +8,8 @@ Per the repository house rule, the drawing and the fit are done by
 which plots ``measured - truth`` against truth, fits a quadratic, marks the
 ``y = 0`` line and shades the tolerance band, and returns the fit coefficients
 with their errors. That is exactly the figure the caption describes, so nothing
-about the plot is re-implemented here. This module pulls the right columns out
+about the science is re-implemented here. Manuscript labels are applied to the
+returned artists before saving. This module pulls the right columns out
 of the evaluation FITS and hands them over.
 
 WHICH COLUMNS, AND WHY
@@ -54,6 +55,7 @@ import numpy as np
 from evaluation_fits import Evaluation
 from plotstyle import tex_available, warn_once
 from paper_numbers import _pair_tables, _shape_column
+from paper_labels import ellipticity_truth, label_prediction_residuals
 
 _NO_SUPERBIT = (
     "This figure is drawn by superbit_lensing.plotter.plot_comparison.\n"
@@ -77,7 +79,7 @@ def panel_inputs(evaluation, estimators, component=0, mask=None):
     if mask is not None:
         keep &= mask
 
-    reference = r"$g_1^{\rm true}$" if component == 0 else r"$g_2^{\rm true}$"
+    reference = ellipticity_truth(component)
     cat = {name: values[keep] for name, values in cat.items()}
     cat[reference] = truth[keep]
     return cat, reference, list(estimators)
@@ -182,6 +184,7 @@ def main(argv=None) -> int:
             cat, reference, compare,
             error_allowed=args.error_allowed,
         )
+        label_prediction_residuals(fig, axes, compare, reference, coefficients, args.component)
         if not args.no_rasterize:
             _rasterize_scatter(axes)
         fig.savefig(args.out, dpi=args.dpi, bbox_inches="tight")

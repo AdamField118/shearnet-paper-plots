@@ -1,4 +1,7 @@
-"""PSF properties figure: PSFEx vs. ngmix EM5 moment maps across the detector.
+"""PSF illustration: observed PSFEx moment maps across the detector.
+
+The paper default keeps only the observed row of the upstream plot. Use
+--rows diagnostic for the former observed/model/residual comparison.
 
 Reproduces Figure C4 of the SuperBIT weak-lensing paper (Saha et al. 2026) for the
 PSF that ShearNet is actually trained on: a 3x3 grid of (e1, e2, T) columns against
@@ -9,7 +12,7 @@ here. This module only:
 
   1. resolves which PSFEx file to use (from a ShearNet config, or an explicit path),
   2. caches the expensive moment-map computation to an ``.npz``, and
-  3. writes the figure out.
+  3. applies the manuscript PSF labels and writes the figure out.
 
 The two calls that matter are
 :func:`superbit_lensing.em5.compute_em5_psfex_maps` and
@@ -54,6 +57,9 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "results"))
+from paper_labels import label_psf_properties  # noqa: E402
 
 
 def _import_superbit():
@@ -188,6 +194,36 @@ def build_maps(psf_file, cache=None, recompute=False, psf_index=0, **kwargs):
     return maps
 
 
+def retain_observed_row(fig, axes):
+    """Remove diagnostic artists from the upstream figure; retain its maps/colors.
+
+    The upstream function always creates a residual row. This is a presentation
+    edit to its returned artists, not a second moment measurement or plotter.
+    """
+    import matplotlib.ticker as mticker
+
+    fig.canvas.draw()
+    fig.set_layout_engine(None)
+    keep = set(axes[0])
+    for ax in axes[0]:
+        keep.update(im.colorbar.ax for im in ax.images if im.colorbar is not None)
+        ax.set_xticks([2000, 4000, 6000, 8000])
+        ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.0f"))
+        ax.set_xlabel("X [pixels]", fontsize=18)
+        ax.set_ylabel(ax.get_ylabel(), fontsize=18)
+        ax.tick_params(labelsize=18)
+        for im in ax.images:
+            if im.colorbar is not None:
+                im.colorbar.ax.tick_params(labelsize=18)
+    for ax in list(fig.axes):
+        if ax not in keep:
+            ax.remove()
+    for label in list(fig.texts):
+        if label.get_text() != "Observed (PSFEx)":
+            label.remove()
+    return axes[:1]
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -221,6 +257,8 @@ def main(argv=None):
     grid.add_argument("--scale", type=float, default=0.141, help="arcsec/pixel")
 
     rows = p.add_argument_group("panel selection")
+    rows.add_argument("--rows", choices=("observed", "diagnostic"), default="observed",
+                      help="paper default: observed PSF only; diagnostic restores all rows")
     rows.add_argument("--no-observed-row", action="store_true")
     rows.add_argument("--no-model-row", action="store_true")
 
@@ -231,6 +269,9 @@ def main(argv=None):
     p.add_argument("--format", nargs="+", default=["pdf", "png"])
     p.add_argument("--dpi", type=int, default=300)
     args = p.parse_args(argv)
+
+    if args.rows == "observed" and args.no_observed_row:
+        p.error("--no-observed-row requires --rows diagnostic")
 
     psf_file = args.psf
     if psf_file is None and args.config:
@@ -256,6 +297,13 @@ def main(argv=None):
         SHOW_OBSERV_ROW=not args.no_observed_row,
         SHOW_MODEL_ROW=not args.no_model_row,
     )
+
+    label_psf_properties(
+        _axes, residual_only=args.no_observed_row and args.no_model_row,
+    )
+
+    if args.rows == "observed":
+        _axes = retain_observed_row(fig, _axes)
 
     stem = Path(args.out) if args.out else (
         Path(__file__).resolve().parent.parent / "figures" / "psf_properties"

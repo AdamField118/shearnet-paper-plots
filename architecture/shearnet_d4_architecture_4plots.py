@@ -3,13 +3,13 @@
 The forward path matches ``fourth_inloop_shearnet_d4/config.yaml`` in the
 ShearNet repository: joint D4 orbit evaluation, separate ``shearnet-d4``
 galaxy/PSF backbones, transformer fusion, inverse alignment and Reynolds
-averaging, four-head learned spatial pooling, odd shear heads, and invariant
+averaging, four-head learned spatial pooling, odd shape heads, and invariant
 size/flux heads.
 
 Usage
 -----
-    python shearnet_d4_architecture.py
-    python shearnet_d4_architecture.py --format pdf png --dpi 300
+    python shearnet_d4_architecture_4plots.py
+    python shearnet_d4_architecture_4plots.py --format pdf png --dpi 300
 """
 
 from __future__ import annotations
@@ -72,15 +72,17 @@ FS = {
     "formula": 11.2,
 }
 
+# Reference ordering P R^r reindexes the implementation's R^r P reflected
+# variants (r -> -r); the eight transforms and component signs are unchanged.
 ORBIT_LABELS = [
-    r"$I$",
-    r"$R_{90}$",
-    r"$R_{180}$",
-    r"$R_{270}$",
-    r"$P$",
-    r"$R_{90}P$",
-    r"$R_{180}P$",
-    r"$R_{270}P$",
+    r"$1$",
+    r"$\widehat R_{90}$",
+    r"$\widehat R_{90}^{2}$",
+    r"$\widehat R_{90}^{3}$",
+    r"$\widehat P$",
+    r"$\widehat P\widehat R_{90}$",
+    r"$\widehat P\widehat R_{90}^{2}$",
+    r"$\widehat P\widehat R_{90}^{3}$",
 ]
 W1 = [(-1) ** (i % 4) for i in range(8)]
 W2 = [(-1) ** ((i % 4) + (i // 4)) for i in range(8)]
@@ -280,7 +282,7 @@ def draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_norm):
 
     # One weight-shared per-variant network.
     rounded_box(ax, 45.0, 55.0, 24.5, 31.0, edge=C["fusion"], fill="white", lw=1.0, radius=1.7)
-    ax.text(57.25, 84.0, r"$F_{\theta}$", ha="center", va="center",
+    ax.text(57.25, 84.0, r"$F$", ha="center", va="center",
             fontsize=FS["group"], fontweight="bold", color=C["fusion"])
     ax.text(57.25, 79.3, "one parameter set\nfor all 8 variants", ha="center", va="center",
             fontsize=FS["tiny"], color=C["muted"], style="italic", linespacing=1.0)
@@ -292,29 +294,29 @@ def draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_norm):
              fill=C["fusion_fill"], fontsize=FS["body"], weight="bold")
     arrow(ax, (55.0, 73.5), (58.9, 69.5), color=C["galaxy"], rad=-0.08)
     arrow(ax, (55.0, 62.7), (58.9, 66.3), color=C["psf"], rad=0.08)
-    stage_label(ax, 57.25, 48.0, r"3. Shared $F_{\theta}$", sub="shared weights")
+    stage_label(ax, 57.25, 48.0, r"3. Shared $F$", sub="shared weights")
     arrow(ax, (41.5, 66.0), (44.9, 66.0))
 
     # Eight fused spatial maps.
     slab_stack(ax, 73.0, 62.0, color=C["feature"], n=5, w=4.6, h=12.5, dx=0.75, dy=0.65)
-    ax.text(77.0, 78.4, r"$F_0,\ldots,F_7$", ha="center", fontsize=FS["body"],
+    ax.text(77.0, 78.4, r"$\phi_0,\ldots,\phi_7$", ha="center", fontsize=FS["body"],
             color=C["feature"], fontweight="bold")
-    stage_label(ax, 77.0, 48.0, r"Tensor $F_i$", sub=r"$8\!\times\!13^2\!\times\!64$",
+    stage_label(ax, 77.0, 48.0, r"Features $\phi_i$", sub=r"$8\!\times\!13^2\!\times\!64$",
                 weight="normal", style="italic")
     arrow(ax, (69.5, 66.0), (72.8, 66.0))
 
     # Alignment and the signed/sign-free group averages.
     rounded_box(ax, 84.0, 55.0, 23.5, 31.0, edge=C["orbit"], fill="white", lw=1.0, radius=1.7)
     text_box(ax, 87.2, 75.6, 17.1, 6.5,
-             "inverse-align" + "\n" + r"$\widetilde F_i=g_i^{-1}F_i$",
+             "inverse-align" + "\n" + r"$\psi_i^{-1}\phi_i$",
              edge=C["orbit"], fill=C["orbit_fill"], fontsize=FS["tiny"],
              linespacing=1.0)
-    ax.text(95.75, 68.9,
-            r"$\Psi_c=\frac{1}{8}\sum_i w_c(g_i)\widetilde F_i$",
-            ha="center", va="center", fontsize=FS["formula"], color=C["ink"])
-    ax.text(95.75, 62.7,
-            r"$\Psi_{\rm inv}=\frac{1}{8}\sum_i\widetilde F_i$",
-            ha="center", va="center", fontsize=FS["formula"], color=C["ink"])
+    ax.text(95.75, 70.0,
+            r"$\Psi_{1,2}=\frac{1}{8}\sum_i w_i\psi_i^{-1}\phi_i$",
+            ha="center", va="center", fontsize=FS["formula"]-1.0, color=C["ink"])
+    ax.text(95.75, 63.8,
+            r"$\frac{1}{8}\sum_i\psi_i^{-1}\phi_i$",
+            ha="center", va="center", fontsize=FS["formula"]-1.0, color=C["ink"])
     ax.text(95.75, 58.2, "signed / sign-free\naverages", ha="center", va="center",
             fontsize=FS["tiny"], color=C["muted"], linespacing=1.05)
     stage_label(ax, 95.75, 48.0, "4. Reynolds", sub="signed / invariant")
@@ -324,10 +326,11 @@ def draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_norm):
     for j, (label, y, color) in enumerate([
         (r"$\Psi_1$", 74.0, C["head"]),
         (r"$\Psi_2$", 66.0, C["head"]),
-        (r"$\Psi_{\rm inv}$", 58.0, C["feature"]),
+        (r"scalar", 58.0, C["feature"]),
     ]):
         slab_stack(ax, 111.0, y, color=color, n=2, w=4.0, h=5.5, dx=0.55, dy=0.45)
-        ax.text(116.8, y + 2.8, label, ha="left", va="center", fontsize=FS["body"], color=C["ink"])
+        ax.text(116.8, y + 2.8, label, ha="left", va="center",
+                fontsize=8.2 if label == "scalar" else FS["body"], color=C["ink"])
     stage_label(ax, 116.0, 48.0, r"$\Psi$ maps", sub=r"$3\!\times\!13^2\!\times\!64$",
                 weight="normal", style="italic")
     arrow(ax, (107.5, 66.0), (110.8, 66.0))
@@ -337,13 +340,13 @@ def draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_norm):
     ax.text(133.75, 82.2, "Attention maps", ha="center", fontsize=FS["small"],
             color=C["pool"], fontweight="bold")
     centers = [(-0.35, -0.25), (0.35, -0.25), (-0.35, 0.35), (0.35, 0.35)]
-    ax.text(133.75, 78.8, r"$A_1,\ldots,A_4$", ha="center", va="center",
+    ax.text(133.75, 78.8, r"maps 1–4", ha="center", va="center",
             fontsize=FS["tiny"], color=C["muted"])
     for k, center in enumerate(centers):
         cx = 129.9 + (k % 2) * 7.7
         cy = 73.4 - (k // 2) * 7.8
         attention_icon(ax, cx, cy, 6.1, center, C["pool"])
-    ax.text(133.75, 57.7, r"$A_k\leftarrow\Psi_{\rm inv}$", ha="center",
+    ax.text(133.75, 57.7, r"from scalar map", ha="center",
             fontsize=FS["small"], color=C["ink"])
     stage_label(ax, 133.75, 48.0, "5. Pooling", sub="4 spatial maps")
     arrow(ax, (120.8, 66.0), (122.9, 66.0))
@@ -354,13 +357,13 @@ def draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_norm):
              fill=C["head_fill"], fontsize=FS["small"], weight="bold")
     text_box(ax, 149.3, 59.5, 15.9, 8.0, "invariant\nMLP", edge=C["feature"],
              fill=C["feature_fill"], fontsize=FS["small"], weight="bold")
-    stage_label(ax, 157.25, 48.0, "6. Output heads", sub="shear + scalars")
+    stage_label(ax, 157.25, 48.0, "6. Output heads", sub="shape + scalars")
     arrow(ax, (144.5, 66.0), (146.9, 66.0))
     arrow(ax, (167.5, 76.8), (170.5, 76.8), color=C["head"])
     arrow(ax, (167.5, 63.5), (170.5, 63.5), color=C["feature"])
-    ax.text(171.2, 76.8, r"$\widehat g_1,\widehat g_2$", ha="left", va="center",
+    ax.text(171.2, 76.8, r"$e_1',e_2'$", ha="left", va="center",
             fontsize=FS["group"], color=C["head"], fontweight="bold")
-    ax.text(171.2, 63.5, "hlr, flux", ha="left", va="center",
+    ax.text(171.2, 63.5, "size, flux", ha="left", va="center",
             fontsize=FS["label"], color=C["feature"], fontweight="bold")
 
 
@@ -368,7 +371,7 @@ def draw_architecture_detail(ax):
     """Compact inset containing the exact configured module depths and widths."""
     rounded_box(ax, 31.0, 2.0, 91.0, 38.5, edge=C["fusion"], fill="white", lw=0.9,
                 radius=1.2)
-    ax.text(33.2, 37.5, r"Detail 3: shared per-variant $F_{\theta}$", ha="left", va="center",
+    ax.text(33.2, 37.5, r"Detail 3: shared per-variant $F$", ha="left", va="center",
             fontsize=FS["label"], color=C["ink"], fontweight="bold")
     ax.text(119.8, 37.5, "distinct galaxy / PSF weights", ha="right", va="center",
             fontsize=FS["tiny"], color=C["muted"], style="italic")
@@ -456,7 +459,7 @@ def draw_symmetry_note(ax):
         text_box(ax, x, 22.0, 4.1, 3.2, pair, edge=to_rgba(C["orbit"], 0.7),
                  fill=to_rgba("white", 0.62), fontsize=8.2, radius=0.38, lw=0.55)
     ax.text(15.0, 17.8, r"signed mean $\rightarrow \Psi_1,\Psi_2$" + "\n" +
-            r"ordinary mean $\rightarrow \Psi_{\rm inv}$",
+            r"ordinary mean $\rightarrow$ scalar",
             ha="center", va="center", fontsize=FS["small"], color=C["muted"],
             linespacing=1.2)
     ax.plot([5.0, 25.0], [12.1, 12.1], color=to_rgba(C["orbit"], 0.55), linewidth=0.7)
@@ -487,7 +490,7 @@ def draw_symmetry_note_standalone(ax):
 
     ax.text(43.0, 16.8,
             r"signed mean $\rightarrow \Psi_1,\Psi_2$" + "\n" +
-            r"ordinary mean $\rightarrow \Psi_{\rm inv}$",
+            r"ordinary mean $\rightarrow$ scalar",
             ha="center", va="center", fontsize=FS["small"], color=C["muted"],
             linespacing=1.25)
     ax.plot([56.2, 56.2], [8.0, 22.0], color=to_rgba(C["orbit"], 0.55), linewidth=0.7)
@@ -501,7 +504,7 @@ def draw_pooling_detail(ax):
                 radius=1.2)
     ax.text(127.0, 37.5, "Details 5-6: pooling + heads", ha="left", va="center",
             fontsize=FS["label"], color=C["ink"], fontweight="bold")
-    text_box(ax, 128.0, 29.1, 5.5, 4.4, r"$\Psi_{\rm inv}$",
+    text_box(ax, 128.0, 29.1, 5.5, 4.4, r"scalar",
              edge=C["feature"], fill=C["feature_fill"], fontsize=FS["small"], radius=0.5)
     text_box(ax, 137.0, 28.8, 9.2, 5.0, "Dense 64\nGELU",
              edge=C["pool"], fill=C["pool_fill"], fontsize=8.2, radius=0.5,
@@ -509,21 +512,21 @@ def draw_pooling_detail(ax):
     text_box(ax, 149.7, 28.8, 9.6, 5.0, "Dense 4\n" + r"softmax$_p$",
              edge=C["pool"], fill=C["pool_fill"], fontsize=8.0, radius=0.5,
              linespacing=1.0)
-    text_box(ax, 162.8, 29.1, 12.2, 4.4, r"$A_1,\ldots,A_4$",
+    text_box(ax, 162.8, 29.1, 12.2, 4.4, r"maps 1–4",
              edge=C["pool"], fill="white", fontsize=8.2, radius=0.5)
     arrow(ax, (133.65, 31.3), (136.85, 31.3), color=C["pool"], lw=0.9)
     arrow(ax, (146.35, 31.3), (149.55, 31.3), color=C["pool"], lw=0.9)
     arrow(ax, (159.45, 31.3), (162.65, 31.3), color=C["pool"], lw=0.9)
 
-    ax.text(151.5, 24.6, r"$s_{c,k}=\sum_p A_k(p)\Psi_c(p)$",
+    ax.text(151.5, 24.6, "Spatially weighted sums of shape maps",
             ha="center", va="center", fontsize=FS["formula"], color=C["ink"])
     ax.text(151.5, 21.2,
-            r"$s_c=[s_{c,1};\ldots;s_{c,4}]\in\mathbb{R}^{256}$",
+            r"Four $64$-channel vectors $\rightarrow 256$ features",
             ha="center", va="center", fontsize=FS["small"], color=C["ink"])
 
     rounded_box(ax, 128.0, 7.0, 22.7, 11.0, edge=C["head"], fill=C["head_fill"],
                 lw=0.75, radius=0.65)
-    ax.text(139.35, 16.0, r"odd heads: $s_1,s_2$", ha="center", va="center",
+    ax.text(139.35, 16.0, "odd shape heads", ha="center", va="center",
             fontsize=FS["tiny"], color=C["head"], fontweight="bold")
     for x, w, label in [(129.4, 3.2, "256"), (135.5, 3.2, "128"),
                         (141.6, 3.2, "128"), (147.7, 2.3, "1")]:
@@ -531,24 +534,24 @@ def draw_pooling_detail(ax):
                  fontsize=8.0, radius=0.35, lw=0.55)
     for x0, x1 in [(132.75, 135.35), (138.85, 141.45), (144.95, 147.55)]:
         arrow(ax, (x0, 12.7), (x1, 12.7), color=C["head"], lw=0.7)
-    ax.text(139.35, 8.8, r"tanh $\rightarrow \widehat g_1,\widehat g_2$",
+    ax.text(139.35, 8.8, r"tanh $\rightarrow e_1',e_2'$",
             ha="center", va="center", fontsize=FS["tiny"], color=C["ink"])
 
     rounded_box(ax, 152.3, 7.0, 22.7, 11.0, edge=C["feature"], fill=C["feature_fill"],
                 lw=0.75, radius=0.65)
-    ax.text(163.65, 16.0, r"invariant: $s_{\rm inv}$", ha="center", va="center",
+    ax.text(163.65, 16.0, "invariant heads", ha="center", va="center",
             fontsize=FS["tiny"], color=C["feature"], fontweight="bold")
     for x, label in [(154.0, "256"), (161.3, "128"), (168.6, "1")]:
         text_box(ax, x, 11.3, 3.4, 2.8, label, edge=C["feature"], fill="white",
                  fontsize=8.0, radius=0.35, lw=0.55)
     for x0, x1 in [(157.55, 161.15), (164.85, 168.45)]:
         arrow(ax, (x0, 12.7), (x1, 12.7), color=C["feature"], lw=0.7)
-    ax.text(163.65, 8.8, r"GELU $\rightarrow$ hlr, flux", ha="center", va="center",
+    ax.text(163.65, 8.8, r"GELU $\rightarrow$ size, flux", ha="center", va="center",
             fontsize=FS["tiny"], color=C["ink"])
 
     arrow(ax, (151.5, 20.1), (139.35, 18.2), color=C["head"], rad=0.05, lw=1.0)
     arrow(ax, (151.5, 20.1), (163.65, 18.2), color=C["feature"], rad=-0.05, lw=1.0)
-    ax.text(151.5, 4.2, r"Shared $A_k$ preserves $D_4$ symmetry.",
+    ax.text(151.5, 4.2, r"Shared pooling weights preserve $D_4$ symmetry.",
             ha="center", va="center", fontsize=FS["tiny"], color=C["muted"])
 
 

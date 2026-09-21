@@ -116,9 +116,7 @@ echo
 DELIVERABLES=(
     "tab:response-diag|results|response_diagnostics.py|--out $OUTDIR/tab_response_diag.tex|cut"
     "tab:timing|results|timing_table.py|--out $OUTDIR/tab_timing.tex|"
-    "fig:psf_leakage|results|psf_leakage.py||"
-    "fig:snr_size|results|snr_size_dependence.py||cut"
-    "fig:prediction-residuals|results|prediction_residuals.py|--out $OUTDIR/prediction_residuals.pdf|cut"
+    "fig:psf-leakage|results|psf_leakage.py|--shape raw --out $OUTDIR/psf_leakage|"
     "fig:response_snr|results|response_vs_snr.py|--out $OUTDIR/response_vs_snr.pdf|cut"
 )
 
@@ -166,7 +164,7 @@ if [[ -n "$FITS" ]]; then
         run "$label" "$dir" "$script" "${args[@]}"
     done
 else
-    echo "  (no --fits given; skipping the six single-run deliverables)"
+    echo "  (no --fits given; skipping the four single-run deliverables)"
 fi
 
 # tab:unit-test-bias spans the four rungs, so it takes a directory of runs
@@ -179,9 +177,9 @@ if [[ -n "$RUNS" ]]; then
     # the rest of the paper uses.
     [[ ${#CUT_ARGS[@]} -gt 0 ]] && tb_args+=("${CUT_ARGS[@]}")
     [[ ${#TABLE_ARGS[@]} -gt 0 ]] && tb_args+=("${TABLE_ARGS[@]}")
-    run "tab:unit-test-bias" "results" "paper_tables.py" "${tb_args[@]}"
+    run "fig:unit-test-bias" "results" "unit_test_bias.py" "${tb_args[@]}" --out "$OUTDIR/unit_test_bias.pdf"
 else
-    echo "  (no --runs given; skipping tab:unit-test-bias)"
+    echo "  (no --runs given; skipping fig:unit-test-bias)"
 fi
 
 echo

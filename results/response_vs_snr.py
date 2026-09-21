@@ -27,7 +27,7 @@ rather than two working PNGs:
 1. The two panels share a figure instead of being saved separately.
 2. The legend sits inside the axes. The notebook anchors it outside to the
    right, which in a 1x2 grid lands on top of the neighbouring panel.
-3. The analytic target is drawn, and the y-range is widened to include it.
+3. An ensemble reference line is drawn, and the y-range is widened to include it.
 
 WHY BOTH DIAGONALS
 ------------------
@@ -39,14 +39,12 @@ Collapsing them to one curve would hide the one thing the architecture cannot
 give you. (Cell 22 draws both; cell 26 draws only :math:`R^{\\rm PSF}_{11}`,
 and is extended here to the second diagonal in cell 22's own style.)
 
-The dashed line on the left is the analytic ensemble target. It is **1**, not
-:math:`1 - \\sigma_e^2`: the observed shape transforms as
-:math:`(\\varepsilon + \\gamma)/(1 + \\bar\\gamma\\varepsilon)`, giving
-:math:`R_{11} = 1 - \\varepsilon_1^2 + \\varepsilon_2^2` per object, whose mean
-over an isotropic population is exactly 1. The familiar :math:`1 - \\sigma_e^2`
-belongs to the distortion convention and does not transfer. On the right the
-target is zero at every signal-to-noise, so that line is the target and not a
-reference.
+The unit-response line on the left is the isotropic ensemble reference for
+reduced ellipticity. It is not a bin-averaged per-object training derivative,
+and these evaluation responses are not derivatives of the training renderer.
+The right panel shows the metacalibration PSF response with zero as its reference.
+The plotted central values are within-bin medians; error bars and bands use the
+notebook's standard deviation divided by the square root of the bin count.
 
 Styling is ``superbit_lensing.plotter.pub_rc``, as every other figure here.
 
@@ -72,7 +70,7 @@ from plotstyle import tex_available, warn_once
 from paper_numbers import _pair_tables
 from response_diagnostics import _matrix_column
 
-#: The analytic ensemble target for each panel, per the module docstring.
+#: Ensemble reference lines, not per-object training targets.
 TARGETS = {"gamma": 1.0, "psf": 0.0}
 
 #: plots_from_fits.ipynb cell 2, verbatim: (R_11 colour, R_22 colour).
@@ -189,9 +187,9 @@ def draw(evaluation, estimators, *, nbins, key, mask, out_path):
 
     panels = (
         ("gamma", "Rgamma_{est}_metacal", r"Metacal $R^{\gamma}$",
-         r"Dilate/metacal $R^\gamma$ vs S/N", r"R^{\gamma}"),
+         r"Metacalibration $R^\gamma$", r"R^{\gamma}"),
         ("psf", "Rpsf_{est}_metacal", r"Metacal $R^{\rm PSF}$",
-         r"Dilate/metacal $R^{\rm PSF}$ vs S/N", r"R^{\rm PSF}"),
+         r"Metacalibration $R^{\rm PSF}$", r"R^{\rm PSF}"),
     )
     with plt.rc_context(rc):
         fig, axes = plt.subplots(1, 2, figsize=(12, 3.75),
@@ -233,7 +231,7 @@ def draw(evaluation, estimators, *, nbins, key, mask, out_path):
                 continue
 
             ax.axhline(target, color="k", ls=":", lw=1.4,
-                       label=("analytic target" if panel == "gamma"
+                       label=("unit response" if panel == "gamma"
                               else "zero (the target)"))
             ypad = 0.06 * (ymax - ymin) if np.isfinite(ymax - ymin) else 0.05
             ax.set_ylim(ymin - ypad, ymax + ypad)
@@ -244,7 +242,7 @@ def draw(evaluation, estimators, *, nbins, key, mask, out_path):
             xlo = 10 ** (np.log10(joined.min()) - log_pad)
             xhi = 10 ** (np.log10(joined.max()) + log_pad)
             style_log_x(ax, xlo, xhi)
-            ax.set_xlabel("S/N")
+            ax.set_xlabel("SNR")
             ax.set_ylabel(ylabel)
             ax.set_title(title, fontsize=12)
             ax.legend(frameon=False, fontsize=10, loc="best")

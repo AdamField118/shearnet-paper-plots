@@ -3,7 +3,7 @@
 Each deliverable runs with its own directory as the working directory, so
 ``--fits evaluations/fourth.fits`` given at the repo root resolved against
 ``results/`` and every script raised FileNotFoundError on a path that plainly
-existed. ``tab:unit-test-bias`` failed the same way but reported all four rungs
+existed. ``fig:unit-test-bias`` failed the same way but reported all four rungs
 as ``\\pending``, which is the worse shape of the bug: it reads as an unfinished
 campaign rather than a broken driver.
 
@@ -86,7 +86,7 @@ def test_a_missing_runs_directory_is_refused(tmp_path):
 
 
 def test_the_cut_reaches_every_deliverable_that_takes_one(tmp_path):
-    """fig:snr_size and tab:unit-test-bias must not be left on a different sample."""
+    """fig:unit-test-bias and fig:unit-test-bias must not be left on a different sample."""
     runs = tmp_path / "evaluations"
     runs.mkdir()
     (runs / "fourth.fits").write_bytes(b"")
@@ -95,8 +95,8 @@ def test_the_cut_reaches_every_deliverable_that_takes_one(tmp_path):
                       "--cut", "both", "--min-resolution", "1.0", cwd=tmp_path)
     assert result.returncode == 0, result.stderr
     for line in result.stdout.splitlines():
-        for label in ("fig:snr_size", "tab:unit-test-bias",
-                      "tab:response-diag", "fig:prediction-residuals",
+        for label in ("fig:unit-test-bias", "fig:unit-test-bias",
+                      "tab:response-diag", "fig:unit-test-bias",
                       "fig:response_snr"):
             if label in line:
                 assert "--cut both" in line, f"{label} runs without the cut: {line}"
@@ -126,8 +126,7 @@ def test_only_tab_timing_follows_timing_fits(tmp_path):
             seen.add("timing")
             assert "evaluation_timed.fits" in line
         elif any(lbl in line for lbl in
-                 ("tab:response-diag", "fig:psf_leakage", "fig:snr_size",
-                  "fig:prediction-residuals", "fig:response_snr")):
+                 ("tab:response-diag", "fig:psf-leakage", "fig:response_snr")):
             seen.add("other")
             assert "evaluation_timed.fits" not in line, (
                 f"a non-timing deliverable followed --timing-fits: {line}"

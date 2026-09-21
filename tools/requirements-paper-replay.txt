@@ -1,0 +1,5 @@
+# Optional archival replay only; ordinary generators keep environment.yml.
+matplotlib==3.10.8
+numpy==2.3.5
+PyMuPDF==1.26.6
+fonttools==4.61.1
