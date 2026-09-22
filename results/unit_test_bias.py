@@ -1,4 +1,4 @@
-"""Figure 4: m and c across UT1--UT4, using the paper table's exact statistics.
+"""Figure 4: |m| and |c| across UT1--UT4, using the paper table's exact statistics.
 
 No categorical UT bias plot exists in LITB-III-plots (sec5/fig19 is a radial
 cluster-shear test), superbit_lensing.plotter, or ShearNet's
@@ -75,25 +75,33 @@ def draw(data):
                         continue
                     any_value = True
                     error = float(err)*scale if err is not None and np.isfinite(err) and err >= 0 else None
-                    ax.bar(x, float(y)*scale, width=.32, color=COLORS[est],
+                    height = abs(float(y))*scale
+                    if error is not None:
+                        lo, hi = (float(y)-float(err))*scale, (float(y)+float(err))*scale
+                        lower = 0.0 if lo <= 0 <= hi else min(abs(lo), abs(hi))
+                        upper = max(abs(lo), abs(hi))
+                        error = np.array([[height-lower], [upper-height]])
+                    ax.bar(x, height, width=.32, color=COLORS[est],
                            alpha=1, hatch=HATCHES[est], yerr=error, capsize=3, linewidth=.6,
                            edgecolor="black", error_kw={"elinewidth": 1})
             ax.set_xticks(range(4), ["UT1", "UT2", "UT3", "UT4"])
             ax.set_xlim(-.6, 3.6)
             ax.set_xlabel("Unit test")
             exponent = -3 if symbol == "m" else -5
-            ax.set_ylabel(rf"${symbol}$ ($10^{{{exponent}}}$)")
+            label = rf"|{symbol}|"
+            ax.set_ylabel(rf"${label}$ ($10^{{{exponent}}}$)")
             ax.spines[["top", "right"]].set_visible(False)
             if any_value:
                 ax.axhline(0, color="0.35", lw=.7, zorder=0)
-                ax.margins(y=.25)
+                ax.margins(y=.12)
+                ax.set_ylim(bottom=0)
             else:
                 ax.set_ylim(0, 1)
                 ax.set_yticks([])
                 ax.text(.5, .5, "Measurements pending", ha="center", va="center",
                         color="0.4", transform=ax.transAxes)
-        axes[0].legend(handles=[Patch(facecolor=COLORS[e], edgecolor="black", hatch=HATCHES[e], label=NAMES[e])
-                                for e in ESTIMATORS], loc="upper right", frameon=False)
+        fig.legend(handles=[Patch(facecolor=COLORS[e], edgecolor="black", hatch=HATCHES[e], label=NAMES[e])
+                                for e in ESTIMATORS], loc="outside upper center", ncol=2, frameon=False)
     return fig
 
 

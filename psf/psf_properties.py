@@ -200,26 +200,33 @@ def retain_observed_row(fig, axes):
     The upstream function always creates a residual row. This is a presentation
     edit to its returned artists, not a second moment measurement or plotter.
     """
-    import matplotlib.ticker as mticker
-
-    fig.canvas.draw()
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
+    from matplotlib.ticker import FormatStrFormatter
     fig.set_layout_engine(None)
     keep = set(axes[0])
-    for ax in axes[0]:
-        keep.update(im.colorbar.ax for im in ax.images if im.colorbar is not None)
-        ax.set_xticks([2000, 4000, 6000, 8000])
-        ax.xaxis.set_major_formatter(mticker.FormatStrFormatter("%.0f"))
-        ax.set_xlabel("X [pixels]", fontsize=18)
-        ax.set_ylabel(ax.get_ylabel(), fontsize=18)
-        ax.tick_params(labelsize=18)
-        for im in ax.images:
-            if im.colorbar is not None:
-                im.colorbar.ax.tick_params(labelsize=18)
     for ax in list(fig.axes):
         if ax not in keep:
             ax.remove()
     for label in list(fig.texts):
         label.remove()
+    fig.set_size_inches(10.8, 2.65)
+    for col, ax in enumerate(axes[0]):
+        ax.set_position([.065 + col*.315, .22, .255, .64])
+        ax.set_axes_locator(None)
+        ax.set_xticks([2000, 4000, 6000, 8000])
+        ax.set_yticks([2000, 4000, 6000])
+        ax.set_xlabel("X [pixels]", fontsize=11)
+        ax.set_ylabel("Y [pixels]" if col == 0 else "", fontsize=11)
+        ax.tick_params(labelsize=10, labelleft=col == 0, labelbottom=True)
+        ax.set_title(ax.get_title(), fontsize=12)
+        im = ax.images[0]
+        im.colorbar = None
+        cax = make_axes_locatable(ax).append_axes("right", size="4%", pad=.10)
+        bar = fig.colorbar(im, cax=cax)
+        lo, hi = im.get_clim()
+        bar.set_ticks([lo, 0, hi] if col < 2 else [lo, (lo+hi)/2, hi])
+        bar.ax.yaxis.set_major_formatter(FormatStrFormatter("%.2f"))
+        bar.ax.tick_params(labelsize=10, pad=2)
     return axes[:1]
 
 

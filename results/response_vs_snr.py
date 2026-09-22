@@ -244,7 +244,8 @@ def draw(evaluation, estimators, *, nbins, key, mask, out_path):
             ax.set_ylabel(ylabel)
             ax.set_title(title, fontsize=12)
             if panel == "gamma":
-                ax.legend(frameon=False, fontsize=10, loc="best")
+                fig.legend(*ax.get_legend_handles_labels(), frameon=False, fontsize=10,
+                           loc="outside upper center", ncol=5)
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out_path, bbox_inches="tight")
