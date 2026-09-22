@@ -219,8 +219,7 @@ def retain_observed_row(fig, axes):
         if ax not in keep:
             ax.remove()
     for label in list(fig.texts):
-        if label.get_text() != "Observed (PSFEx)":
-            label.remove()
+        label.remove()
     return axes[:1]
 
 
@@ -301,6 +300,9 @@ def main(argv=None):
     label_psf_properties(
         _axes, residual_only=args.no_observed_row and args.no_model_row,
     )
+
+    from paper_colors import color_psf_maps
+    color_psf_maps(_axes)
 
     if args.rows == "observed":
         _axes = retain_observed_row(fig, _axes)

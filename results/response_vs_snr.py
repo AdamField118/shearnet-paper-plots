@@ -73,11 +73,7 @@ from response_diagnostics import _matrix_column
 #: Ensemble reference lines, not per-object training targets.
 TARGETS = {"gamma": 1.0, "psf": 0.0}
 
-#: plots_from_fits.ipynb cell 2, verbatim: (R_11 colour, R_22 colour).
-COLORS = {
-    "ngmix": ("#3B4CC0", "#B40426"),
-    "shearnet": ("#2ca02c", "#ff7f0e"),
-}
+from paper_colors import COLORS, RESPONSE_STYLES
 
 
 # ---------------------------------------------------------------------------
@@ -207,8 +203,9 @@ def draw(evaluation, estimators, *, nbins, key, mask, out_path):
                 if arrays is None:
                     continue
                 s2n, components = arrays
-                for entry, color in zip(("11", "22"),
-                                        COLORS.get(estimator, ("C0", "C1"))):
+                for entry in ("11", "22"):
+                    color = COLORS.get(estimator, "0.4")
+                    linestyle, marker = RESPONSE_STYLES[(estimator, entry)]
                     x, y, e = _as_sorted(*_bin_response(components[entry], s2n,
                                                         nbins))
                     if not len(x):
@@ -216,11 +213,12 @@ def draw(evaluation, estimators, *, nbins, key, mask, out_path):
                     all_x.append(x)
                     ax.fill_between(x, y - e, y + e, color=color, alpha=0.18,
                                     linewidth=0)
-                    ax.plot(x, y, c=color, ls="--", lw=2.2, alpha=0.95)
+                    ax.plot(x, y, c=color, ls=linestyle, lw=2.2, alpha=0.95,
+                            label=fr"{estimator} ${symbol}_{{{entry}}}$")
                     ax.errorbar(
-                        x, y, yerr=e, c=color, fmt="o", ms=4.0, mfc="white",
+                        x, y, yerr=e, c=color, fmt=marker, ms=4.0, mfc="white",
                         mew=1.1, capsize=2.5, elinewidth=1.0, lw=0, alpha=0.95,
-                        label=fr"{estimator} ${symbol}_{{{entry}}}$",
+                        label="_nolegend_",
                     )
                     ymin = min(ymin, np.nanmin(y - e))
                     ymax = max(ymax, np.nanmax(y + e))
@@ -232,7 +230,7 @@ def draw(evaluation, estimators, *, nbins, key, mask, out_path):
 
             ax.axhline(target, color="k", ls=":", lw=1.4,
                        label=("unit response" if panel == "gamma"
-                              else "zero (the target)"))
+                              else "zero response"))
             ypad = 0.06 * (ymax - ymin) if np.isfinite(ymax - ymin) else 0.05
             ax.set_ylim(ymin - ypad, ymax + ypad)
 
@@ -245,7 +243,8 @@ def draw(evaluation, estimators, *, nbins, key, mask, out_path):
             ax.set_xlabel("SNR")
             ax.set_ylabel(ylabel)
             ax.set_title(title, fontsize=12)
-            ax.legend(frameon=False, fontsize=10, loc="best")
+            if panel == "gamma":
+                ax.legend(frameon=False, fontsize=10, loc="best")
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(out_path, bbox_inches="tight")

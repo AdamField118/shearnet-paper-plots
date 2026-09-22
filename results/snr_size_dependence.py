@@ -51,7 +51,7 @@ BIN_AXES = {
     "flux_th": {"label": r"flux [counts]", "log": True},
 }
 
-COLORS = {"shearnet": "#B40426", "ngmix": "#3B4CC0", "anacal": "#2E7D74"}
+from paper_colors import COLORS
 MARKERS = {"shearnet": "o", "ngmix": "^", "anacal": "s"}
 
 

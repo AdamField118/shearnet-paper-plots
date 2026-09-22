@@ -1,26 +1,9 @@
 """tab:response-diag -- the measured response matrices of the fiducial model.
 
-The caption asks for two things per estimator: the shear response
-:math:`R^{\\gamma}`, whose ensemble target is the identity, and the PSF response
-:math:`R^{\\rm PSF}`, whose target is zero in every entry. Both are read from the
-per-object columns and averaged over the ring, with a delete-one-block jackknife
-over :data:`paper_numbers.DEFAULT_NJACK` blocks -- the same estimator and the
-same block count the rest of the paper's errors use.
-
-WHY THE ENSEMBLE TARGET FOR R11 IS 1 AND NOT 1 - sigma_e^2
------------------------------------------------------------
-The observed shape transforms as ``(eps + gamma) / (1 + conj(gamma) eps)``, so
-per object ``R11 = 1 - eps1^2 + eps2^2``, which exceeds 1 whenever the galaxy is
-elongated along the second component. Averaging over an isotropic distribution
-gives ``<eps1^2> = <eps2^2>`` and therefore ``<R11> = 1`` exactly. The familiar
-``1 - sigma_e^2`` intuition belongs to the *distortion* convention and does not
-transfer. ShearNet's own ``gamma_target: analytic`` trains against exactly this
-derivative (``shearnet/core/inloop.py``), so the comparison below is against the
-quantity the network was optimized to match, not a convention chosen here.
-
-The translation and isotropy rows of the original table are not emitted: those
-are training-time diagnostics and the evaluation FITS carries no column for
-them.
+Report the ensemble metacalibration matrices directly, without subtracting an
+identity or target. A measured shape statistic need not have unit response.
+Response fidelity is assessed through calibrated shear bias, not its amplitude.
+Per-object columns are ring- and pair-averaged with delete-one-block errors.
 
     python response_diagnostics.py --fits ../evaluations/fourth.fits
     python response_diagnostics.py --fits ../evaluations/fourth.fits --cut both \\
@@ -37,12 +20,9 @@ import numpy as np
 from evaluation_fits import Evaluation
 from paper_numbers import DEFAULT_NJACK, _jackknife_error, _pair_tables, _ring_mean
 
-#: (column template, LaTeX row label, target matrix). The target is what the
-#: entry should be if the estimator is right, and it is printed beside the
-#: measurement so a reader does not have to remember which entries are zero.
 RESPONSES = (
-    ("Rgamma_{est}_metacal", r"$R^{\gamma}$", np.eye(2)),
-    ("Rpsf_{est}_metacal", r"$R^{\rm PSF}$", np.zeros((2, 2))),
+    ("Rgamma_{est}_metacal", r"$R^{\gamma}$"),
+    ("Rpsf_{est}_metacal", r"$R^{\rm PSF}$"),
 )
 
 ENTRIES = ((0, 0, "11"), (1, 1, "22"), (0, 1, "12"), (1, 0, "21"))
@@ -90,7 +70,7 @@ def measure(evaluation, estimator: str, template: str, njack=DEFAULT_NJACK,
 
 def latex_rows(evaluation, estimators, njack=DEFAULT_NJACK, mask=None):
     lines = []
-    for template, label, target in RESPONSES:
+    for template, label in RESPONSES:
         for estimator in estimators:
             result = measure(evaluation, estimator, template, njack, mask)
             if result is None:
@@ -100,10 +80,7 @@ def latex_rows(evaluation, estimators, njack=DEFAULT_NJACK, mask=None):
             cells = []
             for i, j, name in ENTRIES:
                 value, error = result[name]
-                # Subtract the target so the column reads as a residual, which
-                # is what the caption promises: the entries that should vanish
-                # then all sit at zero and are directly comparable.
-                cells.append(f"${value - target[i, j]:+.4f} \\pm {error:.4f}$")
+                cells.append(f"${value:+.4f} \\pm {error:.4f}$")
             lines.append(f"{label} & \\textsc{{{estimator}}} & "
                          + " & ".join(cells) + r" \\")
     return lines
@@ -142,8 +119,7 @@ def main(argv=None) -> int:
     lines = [
         f"% tab:response-diag from {args.fits.name}",
         f"% columns: response & estimator & R11 & R22 & R12 & R21",
-        r"% entries are MEASURED MINUS TARGET: R^gamma against the identity,",
-        r"% R^PSF against zero, so every column should read consistent with 0.",
+        r"% entries are mean measured responses; no identity subtraction.",
         f"% jackknife blocks: {args.njack}   sample cut: {args.cut}",
         *latex_rows(evaluation, estimators, args.njack, mask),
     ]

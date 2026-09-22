@@ -25,7 +25,7 @@ import numpy as np
 
 RUNS = ("first", "second", "third", "fourth")
 ESTIMATORS = ("shearnet", "ngmix")
-COLORS = {"shearnet": "#0072B2", "ngmix": "#D55E00"}
+from paper_colors import COLORS, HATCHES
 NAMES = {"shearnet": "ShearNet", "ngmix": "ngmix"}
 
 
@@ -76,8 +76,8 @@ def draw(data):
                     any_value = True
                     error = float(err)*scale if err is not None and np.isfinite(err) and err >= 0 else None
                     ax.bar(x, float(y)*scale, width=.32, color=COLORS[est],
-                           alpha=.85, yerr=error, capsize=3, linewidth=.6,
-                           edgecolor=COLORS[est], error_kw={"elinewidth": 1})
+                           alpha=1, hatch=HATCHES[est], yerr=error, capsize=3, linewidth=.6,
+                           edgecolor="black", error_kw={"elinewidth": 1})
             ax.set_xticks(range(4), ["UT1", "UT2", "UT3", "UT4"])
             ax.set_xlim(-.6, 3.6)
             ax.set_xlabel("Unit test")
@@ -92,7 +92,7 @@ def draw(data):
                 ax.set_yticks([])
                 ax.text(.5, .5, "Measurements pending", ha="center", va="center",
                         color="0.4", transform=ax.transAxes)
-        axes[0].legend(handles=[Patch(facecolor=COLORS[e], label=NAMES[e], alpha=.85)
+        axes[0].legend(handles=[Patch(facecolor=COLORS[e], edgecolor="black", hatch=HATCHES[e], label=NAMES[e])
                                 for e in ESTIMATORS], loc="upper right", frameon=False)
     return fig
 

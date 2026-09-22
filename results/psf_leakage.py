@@ -272,6 +272,9 @@ def main(argv=None):
             save_path=None,
         )
         fig = plt.gcf()
+        from paper_colors import COLORS, recolor_artists, style_leakage_lines
+        recolor_artists(fig, {"magenta": COLORS[chosen[0]], "teal": COLORS[chosen[1]]})
+        style_leakage_lines(fig)
         label_psf_leakage(fig, shapes=[args.shape or _reported_shape(e) for e in chosen])
         for fmt in args.format:
             path = stem.with_suffix(f".{fmt}")
