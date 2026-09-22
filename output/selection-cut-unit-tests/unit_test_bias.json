@@ -1,0 +1,95 @@
+{
+  "components": {
+    "m": 1,
+    "c": 2,
+    "applied_shear": 1
+  },
+  "cut": "none",
+  "corrections": {
+    "shearnet": "rgamma",
+    "ngmix": "metacal",
+    "anacal": "anacal"
+  },
+  "runs": {
+    "first": {
+      "estimators": {
+        "shearnet": {
+          "m1": 0.01711086950604268,
+          "m1_err": 0.00011942736200023061,
+          "c2": -1.907528806664423e-05,
+          "c2_err": 1.4240842179428894e-05,
+          "problems": {}
+        },
+        "ngmix": {
+          "m1": 0.014944619694317929,
+          "m1_err": 0.0038485948047287826,
+          "c2": 0.00024736692344152946,
+          "c2_err": 2.146901541293705e-05,
+          "problems": {}
+        }
+      },
+      "source": "/home/adfield/shearnet-paper-plots/evaluations/first.fits",
+      "sha256": "4b93e74483b23629387f7765674918672656ba8f29aa77ec7e8ac0dccbeaca9b"
+    },
+    "second": {
+      "estimators": {
+        "shearnet": {
+          "m1": -0.012268235448635978,
+          "m1_err": 0.00024003421778160465,
+          "c2": -6.45211143564495e-06,
+          "c2_err": 1.969665188482923e-05,
+          "problems": {}
+        },
+        "ngmix": {
+          "m1": 0.013342986627516984,
+          "m1_err": 0.006735811368269753,
+          "c2": 0.009437969806074635,
+          "c2_err": 5.211081453049685e-05,
+          "problems": {}
+        }
+      },
+      "source": "/home/adfield/shearnet-paper-plots/evaluations/second.fits",
+      "sha256": "2b13201d772c5a12b7105d27781aff49b6cae935ef377a5a57f570342f27ba34"
+    },
+    "third": {
+      "estimators": {
+        "shearnet": {
+          "m1": 0.005299701879295293,
+          "m1_err": 0.00026462816377214747,
+          "c2": -4.665113718113187e-06,
+          "c2_err": 2.2427510547358317e-05,
+          "problems": {}
+        },
+        "ngmix": {
+          "m1": 0.033474131131199236,
+          "m1_err": 0.006105914493954749,
+          "c2": 0.009944409804776282,
+          "c2_err": 5.734826101150105e-05,
+          "problems": {}
+        }
+      },
+      "source": "/home/adfield/shearnet-paper-plots/evaluations/third.fits",
+      "sha256": "eae4ef02eb7bda38363f7e592e363ce67c486930248603433dbb82e668a87489"
+    },
+    "fourth": {
+      "estimators": {
+        "shearnet": {
+          "m1": 0.0036938255799168207,
+          "m1_err": 0.0004183756132250459,
+          "c2": -3.338758404179909e-05,
+          "c2_err": 2.3582780928067514e-05,
+          "problems": {}
+        },
+        "ngmix": {
+          "m1": 0.031358930544860275,
+          "m1_err": 0.0053218978756928315,
+          "c2": 0.009761996038282171,
+          "c2_err": 6.504329472693754e-05,
+          "problems": {}
+        }
+      },
+      "source": "/home/adfield/shearnet-paper-plots/evaluations/fourth.fits",
+      "sha256": "178c9f6ed9aa21b1622b5f2c704a527a22f72aaa1a5119adae11d32b050265f3"
+    }
+  }
+}
