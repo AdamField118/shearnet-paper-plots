@@ -1,18 +1,22 @@
 #!/bin/bash
 #
-# Produce every figure and table the paper needs, and nothing else.
+# Produce every figure and table the paper draws from the evaluation catalogs.
 #
 #   ./run_all.sh                                    # dry run: print, produce nothing
 #   ./run_all.sh --go --fits evaluations/fourth.fits --runs evaluations
-#   ./run_all.sh --go --fits ... --cut both --min-resolution 1.0
+#   ./run_all.sh --go --runs ~/ShearNet/runs/unit_tests \
+#                --fits ~/ShearNet/runs/unit_tests/fourth/evaluations/default/d4_unit_fourth_default.fits
 #
-# The previous version ran `find . -name "*.py"` and handed every match
-# `--fits`. That worked while every script was a figure, and stopped working
-# once results/ also held the FITS reader, the bias library, the sample cut, a
-# fixture generator that takes `--out` rather than `--fits`, and the metacal
-# diagnostic: five things that are not paper deliverables, two of which would
-# have failed the run outright. The list below is explicit for that reason, and
-# results/paper_manifest.py checks it against the paper's own labels.
+# The catalogs are the ones `shearnet-eval` writes (schema shearnet-eval v1).
+# --runs may be a directory of first.fits ... fourth.fits, or ShearNet's
+# runs/unit_tests itself, so nothing has to be copied.
+#
+# THE CUT. Table 2 and Figures 4 and 5 are measured on the sample that passes
+# ngmix's own fit: T/Tpsf > 1 and s2n > 10 (flags == 0), applied right before m,
+# c and R are formed, with metacal's selection response R^S in the calibration
+# (results/shear_stats.py says exactly how). Figure 3 is NEVER cut: it shows the
+# whole population, because it is what motivates the cut. --cut none turns the
+# cut off everywhere else too.
 
 set -euo pipefail
 
@@ -21,35 +25,26 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GO=0
 FITS=""
 RUNS=""
-TIMING_FITS=""
 OUTDIR="$ROOT/output"
-CUT_ARGS=()
-TABLE_ARGS=()
+CUT_ARGS=(--cut metacal)
 
 usage() {
-    sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
     cat <<'USAGE'
 
 Options:
   --go                  actually run (default is a dry run)
-  --fits PATH           evaluation FITS for the fiducial run (UT4)
-  --runs DIR            directory of per-run FITS, for tab:unit-test-bias
-  --timing-fits PATH    the run that carries the timing pass, for tab:timing.
-                        Only needed when timing lives in a SEPARATE file from
-                        --fits; without it tab:timing reads --fits, and a run
-                        with no timing pass in its header prints \pending.
+  --fits PATH           the fiducial (UT4) catalog: Table 2, Figures 3 and 5
+  --runs DIR            the four unit-test catalogs: Figure 4
   --out DIR             where figures and .tex fragments go (default: output/)
-  --cut WHICH           none | superbit | truth | both  (passed to each script
-                        that takes a sample cut)
-  --min-resolution R    size floor in PSF half-widths, with --cut truth/both
-  --min-hlr H           size floor in arcsec
-  --psf-fwhm F          PSF FWHM in arcsec (default 0.5)
+  --cut metacal|none    the sample cut (default metacal); never applied to Figure 3
+  --min-t-ratio X       T/Tpsf threshold of the metacal cut (default 1)
+  --min-s2n X           s2n threshold of the metacal cut (default 10)
   -h, --help            this
 
-fig:psf-properties and the architecture schematics are NOT run here: they read
-the PSFEx model and synthetic profiles, not an evaluation FITS. Run
+fig:psf-properties and the architecture schematic do not read a catalog: run
 psf/psf_properties.py and architecture/shearnet_d4_architecture_4plots.py
-directly.
+directly. tab:timing is produced outside this repository.
 USAGE
 }
 
@@ -68,21 +63,17 @@ while [[ $# -gt 0 ]]; do
         --go) GO=1; shift ;;
         --fits) FITS="$(abspath "$2")"; shift 2 ;;
         --runs) RUNS="$(abspath "$2")"; shift 2 ;;
-        --timing-fits) TIMING_FITS="$(abspath "$2")"; shift 2 ;;
         --out) OUTDIR="$(abspath "$2")"; shift 2 ;;
-        --cut) CUT_ARGS+=(--cut "$2"); shift 2 ;;
-        --min-resolution) CUT_ARGS+=(--min-resolution "$2"); shift 2 ;;
-        --min-hlr) CUT_ARGS+=(--min-hlr "$2"); shift 2 ;;
-        --psf-fwhm) CUT_ARGS+=(--psf-fwhm "$2"); shift 2 ;;
-        --correction) TABLE_ARGS+=(--correction "$2"); shift 2 ;;
+        --cut) CUT_ARGS[1]="$2"; shift 2 ;;
+        --min-t-ratio) CUT_ARGS+=(--min-t-ratio "$2"); shift 2 ;;
+        --min-s2n) CUT_ARGS+=(--min-s2n "$2"); shift 2 ;;
         -h|--help) usage; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
     esac
 done
 
-# Check the inputs before running anything. Seven scripts each raising the same
-# FileNotFoundError is seven tracebacks describing one typo, with the only
-# useful part -- which path, and what is actually there -- buried in the last.
+# Check the inputs before running anything: one clear message rather than one
+# traceback per script describing the same typo.
 if [[ -n "$FITS" && ! -f "$FITS" ]]; then
     echo "--fits does not exist: $FITS" >&2
     parent="$(dirname "$FITS")"
@@ -98,26 +89,16 @@ if [[ -n "$RUNS" && ! -d "$RUNS" ]]; then
     echo "--runs is not a directory: $RUNS" >&2
     exit 1
 fi
-if [[ -n "$TIMING_FITS" && ! -f "$TIMING_FITS" ]]; then
-    echo "--timing-fits does not exist: $TIMING_FITS" >&2
-    parent="$(dirname "$TIMING_FITS")"
-    if [[ -d "$parent" ]]; then
-        echo "FITS files in $parent:" >&2
-        find -L "$parent" -maxdepth 1 -name "*.fits" -printf '  %f\n' 2>/dev/null | sort >&2
-    fi
-    exit 1
-fi
 
 echo "--- what the paper asks for ---"
 python "$ROOT/results/paper_manifest.py" ${RUNS:+--runs "$RUNS"} | tail -n 2
 echo
 
-# label | directory | script | extra arguments | takes a sample cut?
+# label | directory | script | extra arguments | takes the cut?
 DELIVERABLES=(
     "tab:response-diag|results|response_diagnostics.py|--out $OUTDIR/tab_response_diag.tex|cut"
-    "tab:timing|results|timing_table.py|--out $OUTDIR/tab_timing.tex|"
-    "fig:psf-leakage|results|psf_leakage.py|--shape raw --out $OUTDIR/psf_leakage|"
-    "fig:response_snr|results|response_vs_snr.py|--out $OUTDIR/response_vs_snr.pdf|cut"
+    "fig:response_snr|results|response_vs_snr.py|--out $OUTDIR/response_vs_snr.pdf|"
+    "fig:psf-leakage|results|psf_leakage.py|--shape raw --out $OUTDIR/psf_leakage|cut"
 )
 
 FAILED=()
@@ -129,10 +110,7 @@ run() {
         return 0
     fi
     printf '\n=== %s ===\n' "$label"
-    # Deliberately not fatal. One deliverable failing -- a missing column, an
-    # optional dependency absent -- must not cost the other five, and the run
-    # that produced nothing because the first script died is worse than a run
-    # that produced five figures and named the sixth.
+    # Deliberately not fatal: one deliverable failing must not cost the others.
     if ! ( cd "$ROOT/$dir" && python "$script" "$@" ); then
         echo "!!! $label FAILED (see above)" >&2
         FAILED+=("$label")
@@ -148,36 +126,20 @@ fi
 if [[ -n "$FITS" ]]; then
     for entry in "${DELIVERABLES[@]}"; do
         IFS='|' read -r label dir script extra takes_cut <<< "$entry"
-        # tab:timing reads a header the other deliverables do not care about, so
-        # the timing pass can live in its own run. Everything else stays on the
-        # fiducial file.
-        if [[ "$label" == "tab:timing" && -n "$TIMING_FITS" ]]; then
-            args=(--fits "$TIMING_FITS")
-        else
-            args=(--fits "$FITS")
-        fi
+        args=(--fits "$FITS")
         # shellcheck disable=SC2206
         [[ -n "$extra" ]] && args+=($extra)
-        if [[ -n "$takes_cut" && ${#CUT_ARGS[@]} -gt 0 ]]; then
-            args+=("${CUT_ARGS[@]}")
-        fi
+        [[ -n "$takes_cut" ]] && args+=("${CUT_ARGS[@]}")
         run "$label" "$dir" "$script" "${args[@]}"
     done
 else
-    echo "  (no --fits given; skipping the four single-run deliverables)"
+    echo "  (no --fits given; skipping the single-run deliverables)"
 fi
 
-# tab:unit-test-bias spans the four rungs, so it takes a directory of runs
-# rather than one file.
+# fig:unit-test-bias spans the four unit tests, so it takes a directory.
 if [[ -n "$RUNS" ]]; then
-    tb_args=(--runs "$RUNS")
-    # The same cut and corrections as every other deliverable. Without them
-    # this table reads SUMMARY over the whole population and reports both
-    # estimators through metacal, which is neither the sample nor the pipeline
-    # the rest of the paper uses.
-    [[ ${#CUT_ARGS[@]} -gt 0 ]] && tb_args+=("${CUT_ARGS[@]}")
-    [[ ${#TABLE_ARGS[@]} -gt 0 ]] && tb_args+=("${TABLE_ARGS[@]}")
-    run "fig:unit-test-bias" "results" "unit_test_bias.py" "${tb_args[@]}" --out "$OUTDIR/unit_test_bias.pdf"
+    run "fig:unit-test-bias" "results" "unit_test_bias.py" --runs "$RUNS" \
+        "${CUT_ARGS[@]}" --out "$OUTDIR/unit_test_bias.pdf"
 else
     echo "  (no --runs given; skipping fig:unit-test-bias)"
 fi

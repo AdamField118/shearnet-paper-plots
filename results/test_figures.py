@@ -1,17 +1,10 @@
-"""Two things about the figures that broke once and would break again.
+"""Things about the figures that broke once and would break again.
 
-1. ``fig:prediction-residuals`` shipped as a 6 MB PDF that no viewer would open.
-   ``plot_comparison`` draws one vector path per point, which is right at the
-   sizes it was written for and fatal at 2x10^5 per panel: 18 MB of uncompressed
-   drawing commands, and ~30 s to render a single page even in a fast C
-   renderer. Nothing about the figure was wrong -- the slopes in it are the ones
-   the paper quotes -- so there was no failure to notice, only a file that would
-   not open.
-
-2. ``fig:response_snr`` takes its binning and its axes from
-   ``plots_from_fits.ipynb`` cells 22 and 26 (see the house rule in README).
-   Those are copies, so they can drift from the notebook without anything
-   complaining. These check the properties the notebook's version has.
+``fig:response_snr`` takes its binning and its axes from
+``plots_from_fits.ipynb`` cells 22 and 26 (see the house rule in README).
+Those are copies, so they can drift from the notebook without anything
+complaining. These check the properties the notebook's version has, and that
+the figure is drawn on the whole population, never the cut one.
 
 Run with: python -m pytest results/test_figures.py
 """
@@ -29,75 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 matplotlib = pytest.importorskip("matplotlib")
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.collections import PathCollection  # noqa: E402
-
-from prediction_residuals import _rasterize_scatter  # noqa: E402
 from response_vs_snr import _as_sorted, _bin_response, style_log_x  # noqa: E402
-
-
-# --------------------------------------------------------------------------
-# 1. the point cloud, and only the point cloud, is rasterized
-# --------------------------------------------------------------------------
-
-def test_only_the_scatter_is_rasterized():
-    """Text and the tolerance band must stay vector, or the page stops scaling."""
-    fig, ax = plt.subplots()
-    scatter = ax.scatter(np.arange(10), np.arange(10))
-    band = ax.fill_between([0, 9], [-1, -1], [1, 1])
-    line, = ax.plot([0, 9], [0, 0])
-
-    assert _rasterize_scatter([ax]) == 1
-    assert scatter.get_rasterized() is True
-    assert not band.get_rasterized()
-    assert not line.get_rasterized()
-    plt.close(fig)
-
-
-def test_it_walks_a_2d_axes_grid():
-    """plot_comparison returns a list, but subplots can hand back an array."""
-    fig, axes = plt.subplots(2, 2)
-    for ax in axes.ravel():
-        ax.scatter([0, 1], [0, 1])
-    assert _rasterize_scatter(axes) == 4
-    plt.close(fig)
-
-
-def test_the_page_stops_growing_with_the_sample(tmp_path):
-    """The invariant, not a size threshold.
-
-    A vector scatter costs one path operator per point, so the page grows
-    without bound as the catalogue does -- which is how a 2x10^5-object run
-    produced 18 MB of drawing commands. A rasterized one costs the same however
-    many points land in it. Quadrupling N should barely move the raster and
-    should visibly move the vector; the ratio between them at any single N is
-    just a function of figure size and dpi, so asserting on it would be
-    asserting on nothing.
-    """
-    rng = np.random.default_rng(0)
-
-    def page(n, rasterize):
-        fig, ax = plt.subplots()
-        ax.scatter(rng.normal(size=n), rng.normal(size=n), s=0.7, alpha=0.5)
-        if rasterize:
-            _rasterize_scatter([ax])
-        out = tmp_path / f"{n}-{rasterize}.pdf"
-        fig.savefig(out, dpi=300)
-        plt.close(fig)
-        return out.stat().st_size
-
-    small, large = 20_000, 80_000
-    vector_growth = page(large, False) / page(small, False)
-    raster_growth = page(large, True) / page(small, True)
-
-    assert vector_growth > 2.0, (
-        f"the vector page barely grew ({vector_growth:.2f}x for 4x the points) "
-        "-- this test is no longer measuring what it thinks it is"
-    )
-    assert raster_growth < 1.3, (
-        f"the rasterized page grew {raster_growth:.2f}x for 4x the points, so "
-        "the scatter is reaching the PDF as vector paths -- if it is no longer "
-        "a PathCollection, _rasterize_scatter silently does nothing"
-    )
 
 
 # --------------------------------------------------------------------------
@@ -133,88 +58,32 @@ def test_as_sorted_orders_by_x_and_drops_nan():
     assert list(e) == [0.01, 0.02, 0.03]
 
 
-# --------------------------------------------------------------------------
-# 3. the figure and the table quote alpha on the same shape
-# --------------------------------------------------------------------------
-
-def test_the_figure_and_the_tables_resolve_the_same_leakage_shape():
-    """fig:psf_leakage and tab:unit-test-bias must not drift apart.
-
-    ``run_all.sh`` passes no ``--shape``, so before this both estimators were
-    fitted on ``raw`` while the tables quoted each on its own shape -- a figure
-    and a caption describing different measurements, with nothing failing.
-    """
-    from paper_numbers import reported_leakage_shape
-    from psf_leakage import _reported_shape
-
-    for estimator in ("shearnet", "ngmix"):
-        assert _reported_shape(estimator) == reported_leakage_shape(estimator)
 
 
-def test_ngmix_leakage_excludes_rpsf():
-    """The one deliberate divergence, pinned so it cannot revert quietly.
+def test_figure_3_has_no_cut_option_and_is_measured_uncut(tmp_path, monkeypatch):
+    """The figure motivates the cut, so it must show what the cut removes."""
+    import response_vs_snr
+    from make_fixture import build
 
-    ngmix's m and c come from the full metacal pipeline, but its alpha stops one
-    step short: R^PSF is ~25x larger than the leakage it would correct and
-    subtracting it flips the sign (alpha -0.43 rather than +0.017). The paper's
-    frozen numbers and its limitations section both assume R^PSF is applied to
-    neither estimator's leakage.
-    """
-    from paper_numbers import REPORTED_CORRECTION, reported_leakage_shape
+    path = tmp_path / "fourth.fits"
+    build(3000, seed=7).writeto(path)
+    with pytest.raises(SystemExit):
+        response_vs_snr.main(["--fits", str(path), "--cut", "metacal"])
 
-    assert REPORTED_CORRECTION["ngmix"] == "metacal", "m and c stay on metacal"
-    assert reported_leakage_shape("ngmix") == "noshear_rgamma"
-    assert "rpsf" not in reported_leakage_shape("ngmix")
-    assert "rpsf" not in reported_leakage_shape("shearnet")
+    seen = {}
 
+    def fake_draw(per_object, estimators, **kwargs):
+        seen.update(per_object)
+        return kwargs["out_path"]
 
-# --------------------------------------------------------------------------
-# 3b. dividing by a constant must not hide the constant's own error
-# --------------------------------------------------------------------------
-
-def test_rgamma_m1_error_includes_the_response_uncertainty(tmp_path):
-    """Under ``rgamma`` every object is divided by ONE ensemble R.
-
-    The delete-one-block jackknife then sees a denominator that never changes,
-    cancels it exactly, and reports the numerator's scatter alone. R is measured
-    rather than known -- on the real UT4 run it is 0.9073 +/- 0.0006, whose
-    contribution (+-0.67e-3) is LARGER than the jackknife error it was quoted
-    with (+-0.32e-3). Worse, the ngmix column's SUMMARY error does carry its
-    response uncertainty, so the two columns' error bars meant different things.
-    """
-    pytest.importorskip("astropy")
-    make_fixture = pytest.importorskip("make_fixture")
-
-    out = tmp_path / "evaluation.fits"
-    make_fixture.main(["--out", str(out), "--n", "4000", "--seed", "3"])
-
-    from evaluation_fits import Evaluation
-    from paper_numbers import (_pair_tables, _ratio_with_jackknife,
-                               _ring_mean, _shape_column, ensemble_response,
-                               ensemble_response_error, m1_recomputed)
-
-    ev = Evaluation(out)
-    response_error = ensemble_response_error(ev, "shearnet")
-    if response_error is None:
-        pytest.skip("fixture carries no per-object R^gamma column")
-
-    m, combined = m1_recomputed(ev, "shearnet", "rgamma", njack=20)
-
-    # the numerator-only error, which is what the old code returned
-    plus, minus = _pair_tables(ev, component=0)
-    base = _shape_column(plus, "shearnet", "rgamma")
-    e_plus = _ring_mean(plus, base)[:, 0]
-    e_minus = _ring_mean(minus, base)[:, 0]
-    response = ensemble_response(ev, "shearnet", "metacal")[0]
-    good = np.isfinite(e_plus) & np.isfinite(e_minus)
-    shear = float(ev.header.get("SHEAR_TR", 0.01))
-    _, plain = _ratio_with_jackknife(
-        0.5 * (e_plus[good] - e_minus[good]),
-        np.full(int(good.sum()), response), shear, 20)
-
-    assert combined >= plain, "folding in an uncertainty cannot shrink the error"
-    expected = np.hypot(plain, (1.0 + m) * response_error / abs(response))
-    assert combined == pytest.approx(expected, rel=1e-9)
+    monkeypatch.setattr(response_vs_snr, "draw", fake_draw)
+    monkeypatch.setitem(sys.modules, "superbit_lensing", type(sys)("superbit_lensing"))
+    monkeypatch.setitem(sys.modules, "superbit_lensing.plotter",
+                        type(sys)("superbit_lensing.plotter"))
+    response_vs_snr.main(["--fits", str(path), "--out", str(tmp_path / "r.pdf")])
+    # every object, including the ones s2n > 10 would drop
+    assert seen["ngmix"]["n_objects"] == 3000
+    assert (seen["ngmix"]["s2n"] < 10).any()
 
 
 # --------------------------------------------------------------------------

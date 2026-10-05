@@ -16,29 +16,23 @@ This module only pulls the right columns out of the ShearNet evaluation FITS and
 hands them over. Every shape is ring-averaged, because the ring average cancels
 intrinsic ellipticity while leaving the leakage signal.
 
-WHICH SHAPE, AND WHY IT IS NOT ONE SHAPE
-----------------------------------------
-By default each estimator is fitted on the shape its alpha is *quoted* on --
-:func:`_reported_shape`, read from ``paper_numbers`` so this figure cannot drift
-from ``tab:unit-test-bias``. Those differ by estimator: ShearNet is reported under
-``rgamma`` (the raw image, metacal never touching it, divided by its ensemble shear
-response) and ngmix under ``noshear_rgamma`` (the reconvolved image divided by
-its ensemble shear response, without the PSF-response subtraction). There is no single shape that
-makes the figure and the text agree, and taking one for both would silently put a
-different number in the caption than in the table.
+THE SHAPE AND THE SAMPLE
+------------------------
+Both estimators are fitted on their **raw** shape -- ``g_original``, the
+measurement on the stamp as rendered, with no shear-response division and no
+PSF-response subtraction -- ring-averaged over the four stations of the
+**unsheared** population (scene ``zero``).
 
-``--shape`` overrides that with one shape for both, which is the right thing when
-the question is "what does this correction do", and the wrong thing when the figure
-is going in the paper. ``--compare-shapes`` prints alpha under every shape.
-
-``plot_psf_leakage_comparison`` compares exactly two datasets, so with more than two
-estimators present, pass ``--estimators`` to choose the pair.
+With the default ``--cut metacal`` the sample is the paper's cut (ngmix
+T/Tpsf > 1 and s2n > 10 on the noshear fit, see :mod:`shear_stats`), and an
+object is kept only if **every** ring station passes, so the ring average still
+cancels intrinsic shape. The same objects are used for both estimators.
+``--cut none`` uses every object.
 
 Usage
 -----
-    python psf_leakage.py --fits .../evaluation.fits
-    python psf_leakage.py --fits .../evaluation.fits --estimators shearnet ngmix
-    python psf_leakage.py --fits .../evaluation.fits --compare-shapes
+    python psf_leakage.py --fits ../evaluations/fourth.fits
+    python psf_leakage.py --fits ../evaluations/fourth.fits --cut none
 """
 
 from __future__ import annotations
@@ -56,8 +50,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from evaluation_fits import DISPLAY_NAME, Evaluation  # noqa: E402
-from paper_labels import label_psf_leakage
+from catalog import DISPLAY_NAME, Catalog  # noqa: E402
+from paper_labels import label_psf_leakage  # noqa: E402
+from shear_stats import Sample, cut_from_name, leakage_inputs  # noqa: E402
+
+#: --shape -> the catalog variant fitted
+SHAPES = {"raw": "original", "noshear": "noshear"}
 
 
 def _import_superbit():
@@ -81,33 +79,14 @@ def _import_superbit():
     return PSFLeakagePanelMaker, save_all_panels_to_fits, plot_psf_leakage_comparison
 
 
-def _reported_shape(estimator: str) -> str:
-    """The shape this estimator's alpha is quoted on, from paper_numbers.
+def panel_fits_for(data, out_fits, *, nbin=10, min_count=20, njac=30):
+    """Build superbit panel data from :func:`shear_stats.leakage_inputs` and
+    write its panel FITS.
 
-    Each estimator is reported on its own shape -- ShearNet on the raw image
-    divided by its shear response, ngmix on metacal's noshear image divided by
-    its own -- so there is no single shape that makes this figure agree with the
-    alpha in the text. Resolving through ``paper_numbers`` rather than picking
-    one shape for both is what keeps ``fig:psf_leakage`` and
-    ``tab:unit-test-bias`` describing the same measurement.
-    """
-    from paper_numbers import reported_leakage_shape
-
-    return reported_leakage_shape(estimator)
-
-
-def panel_fits_for(evaluation, estimator, out_fits, *, nbin=10, min_count=20,
-                   njac=30, shape="raw"):
-    """Build superbit panel data for one estimator and write its panel FITS.
-
-    Returns the fitted ``(alpha1, alpha1_err, alpha2, alpha2_err)``, which is the
-    number Table 6 of the paper reports.
+    Returns the fitted ``(alpha1, alpha1_err, alpha2, alpha2_err)``, the slopes
+    the paper quotes.
     """
     PSFLeakagePanelMaker, save_all_panels_to_fits, _ = _import_superbit()
-
-    data = evaluation.leakage_inputs(estimator, shape=shape)
-    if data["n_dropped"]:
-        print(f"  {estimator}: dropped {data['n_dropped']} non-finite rows")
 
     maker = PSFLeakagePanelMaker(
         e1_gal=data["e1_gal"],
@@ -154,14 +133,20 @@ def main(argv=None):
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument("--fits", required=True, help="ShearNet evaluation FITS")
+    p.add_argument("--fits", required=True, help="shearnet-eval catalog")
     p.add_argument(
-        "--estimators", nargs=2, default=None, metavar=("A", "B"),
-        help="the two estimators to compare (default: the first two present)",
+        "--estimators", nargs=2, default=["shearnet", "ngmix"], metavar=("A", "B"),
+        help="the two estimators to compare",
     )
     p.add_argument("--nbin", type=int, default=10, help="e^PSF bins")
     p.add_argument("--min-count", type=int, default=20)
     p.add_argument("--njac", type=int, default=30, help="jackknife resamples")
+    p.add_argument("--cut", choices=("metacal", "none"), default="metacal")
+    p.add_argument("--min-t-ratio", type=float, default=None)
+    p.add_argument("--min-s2n", type=float, default=None)
+    p.add_argument("--shape", choices=sorted(SHAPES), default="raw",
+                   help="raw (default): the original-image measurement, what the "
+                        "paper shows. noshear: metacal's reconvolved image.")
     p.add_argument(
         "--panel-dir", default=None,
         help="keep the intermediate per-estimator panel FITS here",
@@ -170,70 +155,14 @@ def main(argv=None):
                    help="output stem. Default ../figures/psf_leakage")
     p.add_argument("--format", nargs="+", default=["pdf", "png"])
     p.add_argument("--dpi", type=int, default=300)
-    p.add_argument("--shape", default=None,
-                   choices=("raw", "raw_rgamma", "noshear", "noshear_rgamma",
-                            "noshear_rpsf", "noshear_rgamma_rpsf"),
-                   help="ONE shape for both estimators, overriding the "
-                        "per-estimator default. Named by the corrections it "
-                        "carries: raw = the original image, metacal never "
-                        "touched it. noshear = metacal's reconvolved image. "
-                        "_rgamma = divided by <R^gamma>. _rpsf = Rbar^PSF "
-                        "subtracted. Default is each estimator's own reported "
-                        "shape, which is what the tables quote -- use this only "
-                        "to put both pipelines on one footing deliberately.")
-    p.add_argument("--compare-shapes", action="store_true",
-                   help="print alpha for every shape and stop, so the effect of "
-                        "each correction is visible rather than argued")
     args = p.parse_args(argv)
 
-    ev = Evaluation(args.fits)
-
-    if args.compare_shapes:
-        # tempfile is imported at module scope. Importing it again HERE makes
-        # the name local to the whole of main(), so the use on the NORMAL path
-        # (the TemporaryDirectory further down) raises UnboundLocalError
-        # whenever this branch is not taken -- which is every ordinary run.
-        with tempfile.TemporaryDirectory() as scratch:
-            for estimator in (args.estimators or ev.leakage_estimators()):
-                print(f"\n{estimator}")
-                for shape in Evaluation.LEAKAGE_SHAPES:
-                    try:
-                        data = ev.leakage_inputs(estimator, shape=shape)
-                        a1, a1e, a2, a2e = panel_fits_for(
-                            ev, estimator,
-                            os.path.join(scratch, f"{estimator}_{shape}.fits"),
-                            nbin=args.nbin, min_count=args.min_count,
-                            njac=args.njac, shape=shape)
-                        print(f"  {shape:<20} alpha1 = {a1:+.5f} +/- {a1e:.5f}   "
-                              f"alpha2 = {a2:+.5f} +/- {a2e:.5f}\n"
-                              f"  {'':<20} [{data['shape_column']}]")
-                    except Exception as exc:
-                        print(f"  {shape:<20} unavailable: "
-                              f"{type(exc).__name__}: {exc}")
-        return
-    print(ev)
-
-    available = ev.leakage_estimators()
-    if not available:
-        raise SystemExit(
-            "No estimator in the LEAKAGE table has both a shape column and "
-            "Rpsf_<est>_metacal; nothing to plot."
-        )
-
-    if args.estimators:
-        chosen = list(args.estimators)
-        missing = [e for e in chosen if e not in available]
-        if missing:
-            raise SystemExit(
-                f"requested {missing} but LEAKAGE only supports {available}"
-            )
-    else:
-        if len(available) < 2:
-            raise SystemExit(
-                f"the comparison figure needs two estimators, found {available}"
-            )
-        chosen = available[:2]
-    print(f"comparing: {chosen}")
+    catalog = Catalog(args.fits)
+    print(catalog)
+    cut = cut_from_name(args.cut, args.min_t_ratio, args.min_s2n)
+    print(f"cut: {cut.describe() if cut else 'none'}")
+    sample = Sample(catalog, ["zero"], cut=cut, estimators=args.estimators)
+    chosen = list(args.estimators)
 
     _, _, plot_psf_leakage_comparison = _import_superbit()
 
@@ -247,14 +176,13 @@ def main(argv=None):
     try:
         panel_files = []
         for estimator in chosen:
-            shape = args.shape or _reported_shape(estimator)
+            data = leakage_inputs(sample, estimator, scene="zero",
+                                  variant=SHAPES[args.shape])
             out_fits = panel_dir / f"panels_{estimator}.fits"
             a1, a1e, a2, a2e = panel_fits_for(
-                ev, estimator, out_fits,
-                nbin=args.nbin, min_count=args.min_count, njac=args.njac,
-                shape=shape,
-            )
-            print(f"  {DISPLAY_NAME.get(estimator, estimator)} [{shape}]: "
+                data, out_fits, nbin=args.nbin, min_count=args.min_count, njac=args.njac)
+            print(f"  {DISPLAY_NAME.get(estimator, estimator)} [{args.shape}, "
+                  f"{data['n_objects']} of {data['n_total']} objects]: "
                   f"alpha1 = {a1:+.4f} +/- {a1e:.4f}, "
                   f"alpha2 = {a2:+.4f} +/- {a2e:.4f}")
             panel_files.append(out_fits)
@@ -275,7 +203,7 @@ def main(argv=None):
         from paper_colors import COLORS, recolor_artists, style_leakage_lines
         recolor_artists(fig, {"magenta": COLORS[chosen[0]], "teal": COLORS[chosen[1]]})
         style_leakage_lines(fig)
-        label_psf_leakage(fig, shapes=[args.shape or _reported_shape(e) for e in chosen])
+        label_psf_leakage(fig, shapes=[args.shape] * len(chosen))
         for fmt in args.format:
             path = stem.with_suffix(f".{fmt}")
             fig.savefig(path, dpi=args.dpi, bbox_inches="tight")

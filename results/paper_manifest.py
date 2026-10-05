@@ -12,9 +12,10 @@ the answer drifts every time a script is added.
     python paper_manifest.py --strict              # exit non-zero if incomplete
 
 SOURCES
-  fits      derived from an evaluation FITS by a script in this directory
+  fits      derived from a shearnet-eval catalog by a script in this directory
   logs      from training records, not from the benchmark
   static    a schematic or a hand-written table; no measurement
+  external  produced outside this repository
   cut       removed from the paper; nothing should produce it
 """
 
@@ -49,6 +50,8 @@ class Item:
             return "still produced" if self.script and self.path.is_file() else "cut"
         if self.source in ("logs", "static"):
             return "not from the benchmark"
+        if self.source == "external":
+            return "produced elsewhere"
         if self.script is None:
             return "MISSING"
         return "ok" if self.path.is_file() else "MISSING"
@@ -59,12 +62,15 @@ class Item:
 MANIFEST = [
     Item("fig:d4", "static", "architecture/shearnet_d4_architecture_4plots.py", "architecture"),
     Item("fig:psf-properties", "static", "psf/psf_properties.py", "observed PSF row only"),
-    Item("fig:response_snr", "fits", "results/response_vs_snr.py", "diagonal responses vs SNR"),
-    Item("fig:unit-test-bias", "fits", "results/unit_test_bias.py", "m and c vs UT1--UT4"),
-    Item("fig:psf-leakage", "fits", "results/psf_leakage.py", "raw shapes: --shape raw"),
+    Item("fig:response_snr", "fits", "results/response_vs_snr.py",
+         "diagonal responses vs ngmix SNR, never cut"),
+    Item("fig:unit-test-bias", "fits", "results/unit_test_bias.py",
+         "m and c vs UT1--UT4, cut sample, R^S included"),
+    Item("fig:psf-leakage", "fits", "results/psf_leakage.py", "raw shapes, cut sample"),
     Item("tab:unit-tests", "static", None, "simulation definitions"),
-    Item("tab:response-diag", "fits", "results/response_diagnostics.py", "mean response matrices"),
-    Item("tab:timing", "fits", "results/timing_table.py", "original-image timing"),
+    Item("tab:response-diag", "fits", "results/response_diagnostics.py",
+         "mean R^gamma, R^S, R^PSF on the cut sample"),
+    Item("tab:timing", "external", None, "timing script outside this repository"),
     Item("fig:prediction-residuals", "cut", None, "replaced by the UT bias comparison"),
     Item("fig:snr-size", "cut", None, "removed at advisor review"),
     Item("tab:abl-main", "cut", None, "no ablation claims"),
@@ -75,19 +81,18 @@ MANIFEST = [
 #: a driver that runs every .py with --fits: two of them take different
 #: arguments entirely and would fail the run.
 NOT_DELIVERABLES = {
-    "results/paper_tables.py": "optional numeric companion to the bias figure",
-    "results/prediction_residuals.py": "optional diagnostic, removed from manuscript",
-    "results/snr_size_dependence.py": "optional diagnostic, removed from manuscript",
     "results/paper_labels.py": "notation helper",
+    "results/paper_colors.py": "shared estimator colors",
     "results/unit_test_bias_test.py": "bias-figure tests",
-    "results/test_figures.py": "figure and statistic tests",
+    "results/test_figures.py": "figure tests",
+    "results/test_shear_stats.py": "selection / response / bias tests",
+    "results/test_paper_colors.py": "color tests",
     "tools/reproduce_advisor_figures.py": "checked archival replay of supplied figures",
+    "tools/recolor_paper5.py": "archival recolor of a supplied figure",
 
-    "results/evaluation_fits.py": "library: the FITS reader",
-    "results/paper_numbers.py": "library: m, c and alpha",
-    "results/selection.py": "library: the sample cut",
-    "results/make_fixture.py": "test fixture generator (--out, not --fits)",
-    "results/diagnose_metacal.py": "diagnostic for the metacal bias, not a figure",
+    "results/catalog.py": "library: the shearnet-eval catalog reader",
+    "results/shear_stats.py": "library: the cut, R^gamma, R^S, R^PSF, m, c",
+    "results/make_fixture.py": "test catalog generator (--out, not --fits)",
     "results/paper_manifest.py": "this audit",
     "results/plotstyle.py": "library: the TeX-availability probe",
     "results/test_run_all_paths.py": "tests for the driver's path handling",
@@ -95,7 +100,7 @@ NOT_DELIVERABLES = {
 
 
 def _runs_present(root: Path):
-    from paper_tables import find_run
+    from catalog import find_run
 
     return {name: find_run(root, name) for name in ("first", "second", "third", "fourth")}
 
@@ -114,6 +119,7 @@ def main(argv=None) -> int:
     for source, title in (("fits", "MEASURED FROM AN EVALUATION FITS"),
                           ("logs", "FROM TRAINING RECORDS, NOT THE BENCHMARK"),
                           ("static", "SCHEMATIC OR HAND-WRITTEN"),
+                          ("external", "PRODUCED OUTSIDE THIS REPOSITORY"),
                           ("cut", "CUT FROM THE PAPER")):
         items = [i for i in MANIFEST if i.source == source]
         print(f"\n{title}")

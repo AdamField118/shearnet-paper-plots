@@ -48,8 +48,17 @@ notebook's standard deviation divided by the square root of the bin count.
 
 Styling is ``superbit_lensing.plotter.pub_rc``, as every other figure here.
 
+THE SAMPLE IS NEVER CUT
+-----------------------
+This figure motivates the cut, so it shows everything: every measurable record
+of the +g1 and -g1 populations, at every ring station. There is deliberately no
+``--cut`` option. Each object's response is the mean over those records, and its
+S/N is **ngmix's** ``s2n_noshear`` averaged over the same records -- the very
+quantity the ``s2n > 10`` cut is placed on, so the x-axis reads directly against
+the threshold. ``--snr stamp`` uses the stamp S/N instead.
+
     python response_vs_snr.py --fits ../evaluations/fourth.fits
-    python response_vs_snr.py --fits ../evaluations/fourth.fits --nbins 15 --cut both
+    python response_vs_snr.py --fits ../evaluations/fourth.fits --nbins 15
 """
 
 from __future__ import annotations
@@ -65,10 +74,9 @@ matplotlib.use("Agg")
 
 import numpy as np
 
-from evaluation_fits import Evaluation
+from catalog import Catalog
 from plotstyle import tex_available, warn_once
-from paper_numbers import _pair_tables
-from response_diagnostics import _matrix_column
+from shear_stats import ESTIMATORS, G1_PAIR, Sample, responses_per_object
 
 #: Ensemble reference lines, not per-object training targets.
 TARGETS = {"gamma": 1.0, "psf": 0.0}
@@ -145,31 +153,15 @@ def style_log_x(ax, xlo, xhi):
 # ---------------------------------------------------------------------------
 
 
-def response_arrays(evaluation, estimator, template, key, mask=None):
-    """``(s2n, {'11': R11, '22': R22})`` per object, or ``None`` if absent.
-
-    The response is the mean of the +gamma and -gamma measurements of the same
-    galaxy, which is the same quantity the notebook reads off ``TAB_P`` alone
-    with half the variance, and it is what ``tab:response-diag`` already uses.
-    ``_matrix_column`` averages over the ring stations.
-    """
-    plus, minus = _pair_tables(evaluation, component=0)
-    up, down = (_matrix_column(plus, template, estimator),
-                _matrix_column(minus, template, estimator))
-    if up is None or down is None or key not in plus.colnames:
+def response_arrays(per_object, panel):
+    """``(s2n, {'11': R11, '22': R22})`` per object from
+    :func:`shear_stats.responses_per_object`, or ``None`` if empty."""
+    if per_object["n_objects"] == 0:
         return None
-    matrix = 0.5 * (up + down)
-    s2n = np.asarray(plus[key], dtype=float)
-
-    keep = np.isfinite(matrix).all(axis=(1, 2)) & np.isfinite(s2n)
-    if mask is not None:
-        keep &= mask
-    if not keep.any():
-        return None
-    return s2n[keep], {"11": matrix[keep, 0, 0], "22": matrix[keep, 1, 1]}
+    return per_object["s2n"], per_object[panel]
 
 
-def draw(evaluation, estimators, *, nbins, key, mask, out_path):
+def draw(per_object, estimators, *, nbins, out_path, xlabel="SNR"):
     from superbit_lensing.plotter import pub_rc
 
     import matplotlib.pyplot as plt
@@ -182,15 +174,15 @@ def draw(evaluation, estimators, *, nbins, key, mask, out_path):
         rc = {**rc, "text.usetex": False}
 
     panels = (
-        ("gamma", "Rgamma_{est}_metacal", r"Metacal $R^{\gamma}$",
+        ("gamma", r"Metacal $R^{\gamma}$",
          r"Metacalibration $R^\gamma$", r"R^{\gamma}"),
-        ("psf", "Rpsf_{est}_metacal", r"Metacal $R^{\rm PSF}$",
+        ("psf", r"Metacal $R^{\rm PSF}$",
          r"Metacalibration $R^{\rm PSF}$", r"R^{\rm PSF}"),
     )
     with plt.rc_context(rc):
         fig, axes = plt.subplots(1, 2, figsize=(12, 3.75),
                                  constrained_layout=True)
-        for ax, (panel, template, ylabel, title, symbol) in zip(axes, panels):
+        for ax, (panel, ylabel, title, symbol) in zip(axes, panels):
             target = TARGETS[panel]
             # The notebook's y-range is set by the data; the target line has to
             # be inside it or the one horizontal reference in the figure is
@@ -198,8 +190,7 @@ def draw(evaluation, estimators, *, nbins, key, mask, out_path):
             ymin, ymax = target, target
             all_x = []
             for estimator in estimators:
-                arrays = response_arrays(evaluation, estimator, template, key,
-                                         mask)
+                arrays = response_arrays(per_object[estimator], panel)
                 if arrays is None:
                     continue
                 s2n, components = arrays
@@ -240,7 +231,7 @@ def draw(evaluation, estimators, *, nbins, key, mask, out_path):
             xlo = 10 ** (np.log10(joined.min()) - log_pad)
             xhi = 10 ** (np.log10(joined.max()) + log_pad)
             style_log_x(ax, xlo, xhi)
-            ax.set_xlabel("SNR")
+            ax.set_xlabel(xlabel)
             ax.set_ylabel(ylabel)
             ax.set_title(title, fontsize=12)
             if panel == "gamma":
@@ -256,16 +247,13 @@ def draw(evaluation, estimators, *, nbins, key, mask, out_path):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--fits", required=True, type=Path)
-    parser.add_argument("--estimators", nargs="*", default=None)
+    parser.add_argument("--estimators", nargs="*", default=list(ESTIMATORS))
     parser.add_argument("--nbins", type=int, default=25,
                         help="quantile bins in S/N (the notebook's value)")
-    parser.add_argument("--s2n-column", default="s2n")
+    parser.add_argument("--snr", choices=("ngmix", "stamp"), default="ngmix",
+                        help="ngmix (default): ngmix s2n_noshear, the cut variable. "
+                             "stamp: sqrt(sum I^2)/sigma of the noisy stamp.")
     parser.add_argument("--out", type=Path, default=Path("response_vs_snr.pdf"))
-    parser.add_argument("--cut", choices=("none", "superbit", "truth", "both"),
-                        default="none")
-    parser.add_argument("--min-hlr", type=float, default=None)
-    parser.add_argument("--min-resolution", type=float, default=None)
-    parser.add_argument("--psf-fwhm", type=float, default=0.5)
     args = parser.parse_args(argv)
 
     try:
@@ -277,25 +265,22 @@ def main(argv=None) -> int:
         )
         return 2
 
-    evaluation = Evaluation(args.fits)
-    estimators = args.estimators or [e for e in evaluation.estimators()
-                                     if e in ("shearnet", "ngmix")]
+    catalog = Catalog(args.fits)
+    # NO cut: the figure shows the population the cut is chosen on
+    sample = Sample(catalog, list(G1_PAIR), cut=None, estimators=args.estimators)
+    per_object = {est: responses_per_object(sample, est) for est in args.estimators}
+    if args.snr == "stamp":
+        stamp = catalog.column("STAMP", "s2n_stamp", list(G1_PAIR))
+        mask = sample.select["noshear"]
+        count = mask.sum(axis=(0, 1))
+        mean = np.where(mask, stamp, 0.0).sum(axis=(0, 1))[count > 0] / count[count > 0]
+        for est in per_object:
+            per_object[est]["s2n"] = mean
+    for est, d in per_object.items():
+        print(f"  {est}: {d['n_objects']} objects (uncut), median {args.snr} S/N "
+              f"{np.median(d['s2n']):.1f}")
 
-    mask = None
-    if args.cut != "none":
-        from selection import paired_mask
-
-        plus, minus = _pair_tables(evaluation, component=0)
-        mask = np.ones(len(plus), dtype=bool)
-        if args.cut in ("truth", "both"):
-            mask &= paired_mask(plus, minus, "truth", min_hlr=args.min_hlr,
-                                min_resolution=args.min_resolution,
-                                psf_fwhm=args.psf_fwhm)
-        if args.cut in ("superbit", "both"):
-            mask &= paired_mask(plus, minus, "superbit")
-
-    path = draw(evaluation, estimators, nbins=args.nbins, key=args.s2n_column,
-                mask=mask, out_path=args.out)
+    path = draw(per_object, args.estimators, nbins=args.nbins, out_path=args.out)
     print(f"wrote {path}")
     return 0
 

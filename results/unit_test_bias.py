@@ -1,19 +1,25 @@
-"""Figure 4: |m| and |c| across UT1--UT4, using the paper table's exact statistics.
+"""Figure 4: |m| and |c| across UT1--UT4, on the cut sample, calibrated with R^S.
 
 No categorical UT bias plot exists in LITB-III-plots (sec5/fig19 is a radial
 cluster-shear test), superbit_lensing.plotter, or ShearNet's
 research/shear_bias/plots_from_fits.ipynb (checked 2026-09-21). Only the bar layout
-is new. Numerical estimates remain in paper_numbers.run_numbers.
+is new. Every number comes from :func:`shear_stats.shear_bias`.
 
 m is component 1 along the applied shear; c is the orthogonal component 2 on
-that same +/-g1 pair. These definitions belong in the manuscript caption.
+that same +/-g1 pair (Equation 3). With the default ``--cut metacal`` both
+estimators are measured on the sample that passes ngmix's T/Tpsf > 1 and
+s2n > 10 on the noshear fit, each population selected on its own, and calibrated
+by R = <R^gamma> + R^S (see shear_stats). The JSON written next to the figure
+carries m and c without R^S too, and the selected counts.
+
 Missing values are NEVER drawn as zero-height bars. --draft explicitly creates
-an empty layout when no selected-catalog results have been supplied.
+an empty layout when no results have been supplied.
+
+    python unit_test_bias.py --runs ~/ShearNet/runs/unit_tests --out ../output/unit_test_bias.pdf
 """
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 
@@ -23,38 +29,65 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 import numpy as np
 
-RUNS = ("first", "second", "third", "fourth")
+from catalog import RUNS
 ESTIMATORS = ("shearnet", "ngmix")
 from paper_colors import COLORS, HATCHES
 NAMES = {"shearnet": "ShearNet", "ngmix": "ngmix"}
 
 
-def collect(root, args):
-    from evaluation_fits import Evaluation
-    from paper_tables import find_run, _mask_for, _corrections_from
-    from paper_numbers import run_numbers
+def _num(x):
+    x = float(np.asarray(x))
+    return x if np.isfinite(x) else None
 
-    chosen = _corrections_from(args)
+
+def collect(root, args):
+    from catalog import Catalog, find_run
+    from shear_stats import G1_PAIR, Sample, cut_from_name, shear_bias
+
+    cut = cut_from_name(args.cut, args.min_t_ratio, args.min_s2n)
     data = {"components": {"m": 1, "c": 2, "applied_shear": 1},
-            "cut": args.cut, "corrections": chosen, "runs": {}}
+            "cut": cut.describe() if cut else "none", "njack": args.njack, "runs": {}}
     for name in RUNS:
         path = find_run(root, name)
         row = {"estimators": {}}
         if path is not None:
-            ev = Evaluation(path)
-            row.update(source=str(path.resolve()),
-                       sha256=hashlib.sha256(path.read_bytes()).hexdigest())
-            mask = _mask_for(ev, args.cut, args)
+            catalog = Catalog(path)
+            header = catalog.header
+            row.update(source=str(path.resolve()), bytes=path.stat().st_size,
+                       run_name=catalog.run_name, checkpoint_sha256=header.get("CKPTSHA"),
+                       evaluated=header.get("DATE"))
+            sample = Sample(catalog, list(G1_PAIR), cut=cut, estimators=ESTIMATORS)
+            row["counts"] = {s: sample.counts()[s] for s in G1_PAIR}
             for est in ESTIMATORS:
-                numbers = run_numbers(ev, est, njack=args.njack, mask=mask,
-                                      correction=chosen.get(est))
+                b = shear_bias(sample, est, njack=args.njack)
                 row["estimators"][est] = {
-                    key: (float(numbers[key]) if numbers.get(key) is not None
-                          and np.isfinite(numbers[key]) else None)
-                    for key in ("m1", "m1_err", "c2", "c2_err")}
-                row["estimators"][est]["problems"] = numbers["problems"]
+                    "m1": _num(b["m"][0]), "m1_err": _num(b["m"][1]),
+                    "c2": _num(b["c"][0]), "c2_err": _num(b["c"][1]),
+                    "m1_without_RS": _num(b["m_without_RS"][0]),
+                    "m1_without_RS_err": _num(b["m_without_RS"][1]),
+                    "R11": _num(b["R_aa"][0]), "RS11": _num(b["RS_aa"][0]),
+                    "RS11_err": _num(b["RS_aa"][1]), "n_selected": b["n_selected"]}
+            del sample
+            catalog.close()
         data["runs"][name] = row
     return data
+
+
+def report(data) -> str:
+    """The numbers as the text quotes them."""
+    lines = [f"cut: {data.get('cut')}"]
+    for name, label in zip(RUNS, ("UT1", "UT2", "UT3", "UT4")):
+        for est in ESTIMATORS:
+            v = data["runs"].get(name, {}).get("estimators", {}).get(est)
+            if not v or v.get("m1") is None:
+                lines.append(f"  {label} {est:8s} pending")
+                continue
+            lines.append(
+                f"  {label} {est:8s} m1 = ({v['m1'] * 1e3:+.2f} +/- {v['m1_err'] * 1e3:.2f})e-3"
+                f"   c2 = ({v['c2'] * 1e5:+.2f} +/- {v['c2_err'] * 1e5:.2f})e-5"
+                f"   [without R^S: m1 = {v['m1_without_RS'] * 1e3:+.2f}e-3;"
+                f" R^S_11 = {v['RS11']:+.4f}; n = {v['n_selected']}]")
+    return "\n".join(lines)
 
 
 def draw(data):
@@ -108,16 +141,15 @@ def draw(data):
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     src = p.add_mutually_exclusive_group(required=True)
-    src.add_argument("--runs", type=Path)
+    src.add_argument("--runs", type=Path,
+                     help="a directory of <name>.fits, or ShearNet's runs/unit_tests")
     src.add_argument("--values", type=Path, help="replay an exported numeric JSON")
     src.add_argument("--draft", action="store_true", help="explicit empty, pending layout")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--njack", type=int, default=20)
-    p.add_argument("--cut", choices=("none", "superbit", "truth", "both"), default="none")
-    p.add_argument("--min-hlr", type=float, default=None)
-    p.add_argument("--min-resolution", type=float, default=None)
-    p.add_argument("--psf-fwhm", type=float, default=.5)
-    p.add_argument("--correction", action="append", metavar="EST=CORR")
+    p.add_argument("--cut", choices=("metacal", "none"), default="metacal")
+    p.add_argument("--min-t-ratio", type=float, default=None)
+    p.add_argument("--min-s2n", type=float, default=None)
     args = p.parse_args(argv)
     if args.runs:
         if not args.runs.is_dir():
@@ -129,6 +161,8 @@ def main(argv=None):
         data = {"components": {"m": 1, "c": 2, "applied_shear": 1}, "runs": {}}
     if data.get("components") != {"m": 1, "c": 2, "applied_shear": 1}:
         p.error("numeric JSON components do not match the paper convention")
+    if data.get("runs"):
+        print(report(data))
     fig = draw(data)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, metadata={"CreationDate": None, "ModDate": None})

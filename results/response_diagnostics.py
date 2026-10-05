@@ -1,13 +1,22 @@
 """tab:response-diag -- the measured response matrices of the fiducial model.
 
-Report the ensemble metacalibration matrices directly, without subtracting an
-identity or target. A measured shape statistic need not have unit response.
-Response fidelity is assessed through calibrated shear bias, not its amplitude.
-Per-object columns are ring- and pair-averaged with delete-one-block errors.
+The ensemble metacalibration matrices, reported directly without subtracting an
+identity or target: a measured shape statistic need not have unit response,
+and response fidelity is assessed through the calibrated shear bias.
+
+Rows, per estimator:
+
+* ``R^gamma`` -- the mean metacal shear response over the selected sample;
+* ``R^S``     -- metacal's selection response of the cut (zero with ``--cut none``);
+* ``R^PSF``   -- the mean metacal PSF response over the selected sample.
+
+``R^gamma + R^S`` is the response m and c are calibrated by (printed as a
+comment). Every entry is the mean of the +g1 and -g1 populations, over every
+ring station, with a delete-one-block jackknife over objects. The cut and its
+bookkeeping are :mod:`shear_stats`'s; the comment lines say which was used.
 
     python response_diagnostics.py --fits ../evaluations/fourth.fits
-    python response_diagnostics.py --fits ../evaluations/fourth.fits --cut both \\
-        --min-resolution 1.0 --psf-fwhm 0.5
+    python response_diagnostics.py --fits ../evaluations/fourth.fits --cut none
 """
 
 from __future__ import annotations
@@ -15,114 +24,67 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import numpy as np
 
-from evaluation_fits import Evaluation
-from paper_numbers import DEFAULT_NJACK, _jackknife_error, _pair_tables, _ring_mean
+from catalog import Catalog
+from shear_stats import (DEFAULT_NJACK, ESTIMATORS, G1_PAIR, Sample, cut_from_name,
+                         responses)
 
-RESPONSES = (
-    ("Rgamma_{est}_metacal", r"$R^{\gamma}$"),
-    ("Rpsf_{est}_metacal", r"$R^{\rm PSF}$"),
-)
-
+ROWS = (("Rg", r"$R^{\gamma}$"), ("RS", r"$R^{\rm S}$"), ("Rp", r"$R^{\rm PSF}$"))
 ENTRIES = ((0, 0, "11"), (1, 1, "22"), (0, 1, "12"), (1, 0, "21"))
 
 
-def _matrix_column(table, template: str, estimator: str):
-    """The per-object 2x2 response, ring-averaged, or None if absent."""
-    from paper_numbers import _station_suffixes
-
-    base = template.format(est=estimator)
-    if not _station_suffixes(table.colnames, base):
-        return None
-    return _ring_mean(table, base)
+def measure(catalog, estimators, cut, njack=DEFAULT_NJACK) -> dict:
+    sample = Sample(catalog, list(G1_PAIR), cut=cut, estimators=estimators)
+    return {"sample": sample,
+            "results": {est: responses(sample, est, njack=njack) for est in estimators}}
 
 
-def measure(evaluation, estimator: str, template: str, njack=DEFAULT_NJACK,
-            mask=None):
-    """``{entry: (value, error)}`` for one response matrix.
-
-    Both populations are averaged, because the response is a property of the
-    measurement rather than of the applied shear, and using one sign would throw
-    away half the sample for no reason.
-    """
-    plus, minus = _pair_tables(evaluation, component=0)
-    up, down = (_matrix_column(plus, template, estimator),
-                _matrix_column(minus, template, estimator))
-    if up is None or down is None:
-        return None
-    matrix = 0.5 * (up + down)
-
-    keep = np.isfinite(matrix).all(axis=(1, 2))
-    if mask is not None:
-        keep &= mask
-    matrix = matrix[keep]
-    if len(matrix) < njack:
-        return None
-
-    out = {}
-    for i, j, name in ENTRIES:
-        values = matrix[:, i, j]
-        out[name] = (float(values.mean()), _jackknife_error(values, njack))
-    out["n_used"] = len(matrix)
-    return out
-
-
-def latex_rows(evaluation, estimators, njack=DEFAULT_NJACK, mask=None):
+def latex_rows(results) -> list:
     lines = []
-    for template, label in RESPONSES:
-        for estimator in estimators:
-            result = measure(evaluation, estimator, template, njack, mask)
-            if result is None:
-                lines.append(f"{label} & \\textsc{{{estimator}}} & "
-                             + " & ".join([r"\pending"] * len(ENTRIES)) + r" \\")
-                continue
-            cells = []
-            for i, j, name in ENTRIES:
-                value, error = result[name]
-                cells.append(f"${value:+.4f} \\pm {error:.4f}$")
-            lines.append(f"{label} & \\textsc{{{estimator}}} & "
-                         + " & ".join(cells) + r" \\")
+    for key, label in ROWS:
+        for est, r in results.items():
+            value, error = r[key]
+            cells = [f"${value[i, j]:+.4f} \\pm {error[i, j]:.4f}$" for i, j, _ in ENTRIES]
+            lines.append(f"{label} & \\textsc{{{est}}} & " + " & ".join(cells) + r" \\")
     return lines
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--fits", required=True, type=Path)
-    parser.add_argument("--estimators", nargs="*", default=None)
+    parser.add_argument("--estimators", nargs="*", default=list(ESTIMATORS))
     parser.add_argument("--njack", type=int, default=DEFAULT_NJACK)
-    parser.add_argument("--cut", choices=("none", "superbit", "truth", "both"),
-                        default="none")
-    parser.add_argument("--min-hlr", type=float, default=None)
-    parser.add_argument("--min-resolution", type=float, default=None)
-    parser.add_argument("--psf-fwhm", type=float, default=0.5)
+    parser.add_argument("--cut", choices=("metacal", "none"), default="metacal",
+                        help="metacal (default): ngmix T/Tpsf > 1 and s2n > 10 on each "
+                             "metacal product's own fit, with R^S. none: every record.")
+    parser.add_argument("--min-t-ratio", type=float, default=None)
+    parser.add_argument("--min-s2n", type=float, default=None)
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args(argv)
 
-    evaluation = Evaluation(args.fits)
-    estimators = args.estimators or [e for e in evaluation.estimators()
-                                     if e in ("shearnet", "ngmix")]
+    cut = cut_from_name(args.cut, args.min_t_ratio, args.min_s2n)
+    catalog = Catalog(args.fits)
+    measured = measure(catalog, args.estimators, cut, args.njack)
+    sample, results = measured["sample"], measured["results"]
 
-    mask = None
-    if args.cut != "none":
-        from selection import paired_mask
-
-        plus, minus = _pair_tables(evaluation, component=0)
-        mask = np.ones(len(plus), dtype=bool)
-        if args.cut in ("truth", "both"):
-            mask &= paired_mask(plus, minus, "truth", min_hlr=args.min_hlr,
-                                min_resolution=args.min_resolution,
-                                psf_fwhm=args.psf_fwhm)
-        if args.cut in ("superbit", "both"):
-            mask &= paired_mask(plus, minus, "superbit")
-
+    counts = sample.counts()
     lines = [
-        f"% tab:response-diag from {args.fits.name}",
-        f"% columns: response & estimator & R11 & R22 & R12 & R21",
-        r"% entries are mean measured responses; no identity subtraction.",
-        f"% jackknife blocks: {args.njack}   sample cut: {args.cut}",
-        *latex_rows(evaluation, estimators, args.njack, mask),
+        f"% tab:response-diag from {args.fits.name} ({catalog.run_name})",
+        "% columns: response & estimator & 11 & 22 & 12 & 21",
+        "% entries are means over the +g1 and -g1 populations and every ring station;",
+        f"% errors: delete-one-block jackknife over objects, {args.njack} blocks",
+        f"% cut: {cut.describe() if cut else 'none (every measurable record)'}",
     ]
+    for scene in G1_PAIR:
+        c = counts[scene]
+        lines.append(f"%   {scene}: {c['selected_noshear']} of {c['records']} records "
+                     f"selected ({c['selected_noshear'] / c['records']:.1%})")
+    for est, r in results.items():
+        total, error = r["R"]
+        lines.append(f"% R = R^gamma + R^S, {est}: "
+                     + ", ".join(f"R{name} = {total[i, j]:+.4f} +/- {error[i, j]:.4f}"
+                                 for i, j, name in ENTRIES))
+    lines += latex_rows(results)
     text = "\n".join(lines)
     print(text)
     if args.out:

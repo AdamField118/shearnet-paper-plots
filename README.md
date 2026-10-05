@@ -47,17 +47,6 @@ those choices needs to change, change it upstream so both papers move together.
 
 ### Postprocessing returned artists
 
-Upstream plotters were written for catalogues of a few thousand objects and draw
-every point as a vector path. At our sizes (2×10⁵ per panel) that is a PDF no viewer
-will open: `plot_comparison` on UT4 emits 18 MB of drawing commands, 6 MB on disk,
-and takes ~30 s per page even in a fast C renderer. So after the upstream call
-returns, the point cloud is rasterized and everything else — axes, fit curve, every
-piece of text — is left as vectors
-(`results/prediction_residuals.py::_rasterize_scatter`; 6.2 MB → 0.8 MB). That sets
-one property on the artists upstream handed back. It reimplements nothing, and it is
-what LITB-III-plots does with its own large scatters (`sec1/fig1_footprint.ipynb`,
-`sec2/sec2.3/fig2_target_footprints.py`).
-
 Manuscript label edits also act on the returned artists; they do not wrap or
 reimplement an upstream plotter. The fit coefficients and error estimates still
 come from the upstream call.
@@ -197,54 +186,43 @@ Re-run the notebook only when the stamp itself should change.
 
 ### `results/`
 
-Figures driven by the evaluation FITS that `research/shear_bias/run.py` writes
-(`benchmarking/evaluation.fits`, ~1 GB at production `n_obs`). One file holds
-everything: `TAB_P`/`TAB_M` (per-object ± shear populations), `LEAKAGE`, `SUMMARY`,
-`BINNED`, `LEAKSUM`, and the run configuration plus timing (`RENDER_S`,
-`INFERENC`) in the primary header.
-
-**`evaluation_fits.py`** is the only module that knows that layout. Everything else
-asks it for named quantities, so a schema change is a one-file edit.
-
-**`psf_leakage.py`** — mean recovered shear against PSF ellipticity, with the fitted
-leakage slope α per estimator (paper Figure 6).
+Everything here reads the catalogs `shearnet-eval` writes
+(`<run>/evaluations/default/<run_name>_default.fits`, schema `shearnet-eval` v1;
+ShearNet's `docs/catalog.md` lists every column). A catalog holds raw
+measurements only, so every response, cut and bias is formed here.
 
 ```bash
-python psf_leakage.py --fits .../evaluation.fits
-python psf_leakage.py --fits .../evaluation.fits --estimators shearnet ngmix
+# the whole paper, straight from ShearNet's run directories (nothing copied)
+./run_all.sh --go --runs ~/ShearNet/runs/unit_tests \
+    --fits ~/ShearNet/runs/unit_tests/fourth/evaluations/default/d4_unit_fourth_default.fits
 ```
 
-The binning, the jackknife α/β fit and the drawing are `superbit_lensing`'s
-(`PSFLeakagePanelMaker`, `save_all_panels_to_fits`, `plot_psf_leakage_comparison`).
-This script only selects columns. It reads `e_<est>_raw_ring`: the ring average
-cancels intrinsic ellipticity, and *raw* keeps the PSF-response correction out,
-since that correction is exactly what the slope is measuring.
+| deliverable | script | sample |
+|---|---|---|
+| Table 2, `tab:response-diag` | `response_diagnostics.py` | cut |
+| Figure 3, `fig:response_snr` | `response_vs_snr.py` | **never cut** |
+| Figure 4, `fig:unit-test-bias` | `unit_test_bias.py` | cut, `R = <R^gamma> + R^S` |
+| Figure 5, `fig:psf-leakage` | `psf_leakage.py` | cut, ring-complete objects |
 
-**`snr_size_dependence.py`** — multiplicative bias in bins of S/N and half-light
-radius, against the Stage IV band (paper Figure 8).
+**`catalog.py`** is the only module that knows the file layout; **`shear_stats.py`**
+is the only one that forms a statistic. See "The cut, the shapes and the errors"
+below.
 
-```bash
-python snr_size_dependence.py --fits .../evaluation.fits
-python snr_size_dependence.py --fits .../evaluation.fits --bin-by s2n hlr_th flux_th
-```
+**`psf_leakage.py`** — median centred raw shape against PSF ellipticity, with the
+fitted leakage slope α per estimator. The binning, the jackknife α/β fit and the
+drawing are `superbit_lensing`'s (`PSFLeakagePanelMaker`, `save_all_panels_to_fits`,
+`plot_psf_leakage_comparison`); this script only selects the objects and columns:
+`g_original` (the stamp as rendered, no response division, no PSF-response
+subtraction), ring-averaged over the unsheared population.
 
-Note the `BINNED` HDU **cannot** supply this figure: `bin_by` is fixed to `"flux"`
-in `run.py` at the pinned commit, so `BINNED` only has flux bins. The per-object
-`TAB_P`/`TAB_M` tables do carry `s2n` and `hlr_th`, so the bins are formed here and
-the bias in each is computed by **ShearNet's own** `shearnet.methods.anacal.paired_bias`
-with `bin_values`. `m` is a pair-matched ratio of means with a jackknife error and a
-specific `c` convention; reimplementing it here would be a second thing that can
-disagree with the `SUMMARY` table in the same file. (If `bin_by` grows S/N and size
-options upstream, this script should switch to reading `BINNED` instead.)
-
-**`make_fixture.py`** writes a few-MB FITS with the production schema and *known
-injected answers* — a leakage slope per estimator and an S/N-dependent bias — so the
-figure scripts can be developed and tested without the real file. A script that
-recovers the injected value is reading the file correctly.
+**`make_fixture.py`** writes a small catalog in the real schema with *known injected
+answers* — responses, PSF leakage, and an S/N that depends on the measured shape so
+that the cut has a large selection response. `test_shear_stats.py` checks that the
+statistics recover them: m is the injected value only once `R^S` is included.
 
 ```bash
-python make_fixture.py -o /tmp/eval_fixture.fits --n 40000
-python psf_leakage.py --fits /tmp/eval_fixture.fits          # recovers 0.012 / 0.043
+python make_fixture.py -o /tmp/fixture.fits --n 60000
+python unit_test_bias.py --runs /tmp --out /tmp/bias.pdf   # with /tmp/fourth.fits etc.
 ```
 
 ### `psf/`
@@ -317,49 +295,48 @@ resolves there, which is what this repo already calls.
 | what | who draws it |
 |---|---|
 | `fig:psf_leakage` | `superbit_lensing.plotter.PSFLeakagePanelMaker`, `save_all_panels_to_fits`, `plot_psf_leakage_comparison` |
-| `fig:prediction-residuals` | `superbit_lensing.plotter.plot_comparison` |
-| `fig:snr_size` | `shearnet.methods.anacal.paired_bias` for the bias; axes here |
 | `fig:response_snr` | no plotter in either repo; axes here, `pub_rc` for styling |
-| `tab:*` | no plotter applies; `superbit_lensing` supplies the selection-cut values |
+| `fig:unit-test-bias` | no plotter in either repo; bars here |
+| the cut and `R^S` | `superbit_lensing.diagnostics.compute_R_S` is the recipe `shear_stats` follows |
 
 `results/plotstyle.py` is NOT a styling wrapper: figures call `pub_rc` directly,
 and that module answers only whether the local TeX can render.
 
-## Which number each estimator is reported under
+## The cut, the shapes and the errors
 
-`paper_numbers.REPORTED_CORRECTION` -- a scientific choice, not a default.
+All of it is in `results/shear_stats.py`, written down once.
 
-* **ShearNet: `rgamma`.** The raw image -- metacal never touching it -- divided
-  by its shear response and nothing else. On the **uncut** UT4 sample that
-  response is **0.907**, not the 0.99 measured on the resolution-cut sample, so
-  leaving it uncalibrated reports `m = -85e-3` where the same shape over
-  `R^gamma` reports `+8.4e-3`. What ShearNet does not need is metacal's
-  deconvolve/reconvolve: it doubles the leakage (0.95e-2 -> 2.1e-2) and brings
-  in an `R^PSF` term that is separately broken.
-* **ngmix: `metacal`.** The full estimator -- `R^PSF` subtracted, then divided
-  by `R^gamma`. A shape measurement responding to shear at 0.64 is not an
-  estimator of shear without it.
+**The cut** is on **ngmix's own Gaussian fit**, product by product:
+`flags_t == 0`, `T_t / Tpsf_t > 1` and `s2n_t > 10`, where `t` is a metacal product
+(`noshear`, `1p`, `1m`, `2p`, `2m`) and `T`, `Tpsf`, `s2n` are the `NGMIX` columns
+with that suffix (`Tpsf` is ngmix's fit of the PSF that product was fitted with: for
+metacal, the dilated reconvolution PSF). Never the truth radius, the stamp S/N or a
+catalog proxy. The same ngmix-defined sample is used for both estimators.
 
-`m`, `c` and `alpha` all follow that one choice
-(`_SHAPE_BY_CORRECTION`, `LEAKAGE_SHAPE_BY_CORRECTION`), so the paper cannot
-quote a bias from one pipeline and a leakage from another. Compare the options
-with `paper_tables.py --compare-corrections` and
-`psf_leakage.py --compare-shapes`.
+**Where it acts** — only where m, c and R are formed, per applied-shear population,
+as SuperBIT's `compute_R_S` does:
 
-### Leakage shape names
+* the sample is the `noshear` selection of the population;
+* `<R^gamma>` is averaged over it;
+* `R^S[:, j] = (<e>_{S(jp)} - <e>_{S(jm)}) / (2 step)`, with `S(1p)` the cut on the
+  `1p` product's fit and `e` the estimator's unsheared shape;
+* m and c (Equation 3) are calibrated by `R = <R^gamma> + R^S`.
 
-Named by the corrections they carry, because "corrected" and "calibrated" do
-not distinguish two different corrections:
+Each population is selected on its own, as a survey would be, and `R^S` corrects
+for the shear dependence of that selection. On the fixture, leaving `R^S` out biases
+m by about -0.15; with it m is the injected value.
 
-| name | image | `R^PSF` | `R^gamma` |
-|---|---|---|---|
-| `raw` | original | no | no |
-| `raw_rgamma` | original | no | yes |
-| `noshear` | metacal reconvolved | no | no |
-| `noshear_rgamma` | metacal reconvolved | no | yes |
-| `noshear_rpsf` | metacal reconvolved | yes | no |
-| `noshear_rgamma_rpsf` | metacal reconvolved | yes | yes |
+Figure 3 is never cut, because it is what motivates the cut. Its S/N axis is ngmix's
+`s2n_noshear`, the quantity the cut is placed on.
 
-`run.py`'s own column names invert the convention -- it writes metacal's noshear
-as `e_<est>_raw` and the genuinely raw measurement as `e_<est>_original` -- so
-`Evaluation.COLUMNS_BY_SOURCE` states the mapping once.
+**The shapes.** ShearNet: `SHEARNET.g_original` (the network on the stamp as rendered)
+calibrated by its own metacal `R^gamma + R^S`. ngmix: `NGMIX.g_noshear` with the
+population PSF correction `<e> - <R^PSF><e^PSF>` (`e^PSF` = `STAMP.psf_g`),
+calibrated by its own `R^gamma + R^S`. Figure 5 uses `g_original` for both.
+
+**The errors.** Delete-one-block jackknife over **objects** (20 contiguous blocks of
+catalog rows): each sample drops the block from every scene and every ring station
+and re-forms the whole statistic, `R^S` and the ratio included. So the
+shape/response covariance, the ±γ pairing and the correlation of rotated copies of a
+galaxy are carried, the same way for both estimators. Figure 5's slope errors are
+`PSFLeakagePanelMaker`'s own 30-sample jackknife.
