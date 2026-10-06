@@ -202,18 +202,20 @@ measurements only, so every response, cut and bias is formed here.
 | Table 2, `tab:response-diag` | `response_diagnostics.py` | cut |
 | Figure 3, `fig:response_snr` | `response_vs_snr.py` | **never cut** |
 | Figure 4, `fig:unit-test-bias` | `unit_test_bias.py` | cut, `R = <R^gamma> + R^S` |
-| Figure 5, `fig:psf-leakage` | `psf_leakage.py` | cut, ring-complete objects |
+| Figure 5, `fig:psf-leakage` | `psf_leakage.py` | cut, ring-complete objects; ngmix R^PSF-corrected |
 
 **`catalog.py`** is the only module that knows the file layout; **`shear_stats.py`**
 is the only one that forms a statistic. See "The cut, the shapes and the errors"
 below.
 
-**`psf_leakage.py`** — median centred raw shape against PSF ellipticity, with the
-fitted leakage slope α per estimator. The binning, the jackknife α/β fit and the
-drawing are `superbit_lensing`'s (`PSFLeakagePanelMaker`, `save_all_panels_to_fits`,
-`plot_psf_leakage_comparison`); this script only selects the objects and columns:
-`g_original` (the stamp as rendered, no response division, no PSF-response
-subtraction), ring-averaged over the unsheared population.
+**`psf_leakage.py`** — median centred calibrated shape against PSF ellipticity,
+with the fitted leakage slope α per estimator. The binning, the jackknife α/β fit,
+the R^PSF correction and the drawing are `superbit_lensing`'s
+(`PSFLeakagePanelMaker`, `save_all_panels_to_fits`, `plot_psf_leakage_comparison`);
+this script only selects the objects and columns, ring-averaged over the unsheared
+population: ngmix `g_noshear` with `correct_psf_leakage=True`, ShearNet
+`g_original` with it off, both divided by their own `R = <R^gamma> + R^S`.
+`--shape raw` draws the uncorrected `g_original` of both instead.
 
 **`make_fixture.py`** writes a small catalog in the real schema with *known injected
 answers* — responses, PSF leakage, and an S/N that depends on the measured shape so
@@ -329,10 +331,18 @@ m by about -0.15; with it m is the injected value.
 Figure 3 is never cut, because it is what motivates the cut. Its S/N axis is ngmix's
 `s2n_noshear`, the quantity the cut is placed on.
 
-**The shapes.** ShearNet: `SHEARNET.g_original` (the network on the stamp as rendered)
-calibrated by its own metacal `R^gamma + R^S`. ngmix: `NGMIX.g_noshear` with the
-population PSF correction `<e> - <R^PSF><e^PSF>` (`e^PSF` = `STAMP.psf_g`),
-calibrated by its own `R^gamma + R^S`. Figure 5 uses `g_original` for both.
+**The shapes, and R^PSF.** Every ngmix number is R^PSF-corrected; no ShearNet
+number is. Both are divided by their own `R = <R^gamma> + R^S`.
+
+* ShearNet: `SHEARNET.g_original` (the network on the stamp as rendered).
+* ngmix: `NGMIX.g_noshear` (metacal). For m and c the correction is the population
+  one, `<e> - <R^PSF><e^PSF>` (`e^PSF` = `STAMP.psf_g`); for Figure 5 it is
+  `superbit_lensing`'s per-object one, `e - R^PSF e^PSF` with `R^PSF` the mean in
+  each `e^PSF` percentile bin (LITB III Appendix D). Either way the shape is
+  `(e - R^PSF e^PSF) / R`, LITB III Eq. 24's order.
+
+LITB III's Eq. 24 also subtracts the additive term `<c_gamma>`; these scripts do
+not (yet).
 
 **The errors.** Delete-one-block jackknife over **objects** (20 contiguous blocks of
 catalog rows): each sample drops the block from every scene and every ring station

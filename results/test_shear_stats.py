@@ -218,3 +218,89 @@ def test_find_run_reads_a_shearnet_runs_directory(tmp_path, fixture_path):
     flat.mkdir()
     (flat / "fourth.fits").symlink_to(fixture_path)
     assert find_run(flat, "fourth") == flat / "fourth.fits"
+
+
+# --------------------------------------------------------------------------
+# Figure 5 calibrated: ngmix R^PSF-corrected, ShearNet never
+# --------------------------------------------------------------------------
+
+def test_calibrated_leakage_corrects_ngmix_for_rpsf_and_not_shearnet(cat):
+    from shear_stats import calibrated_leakage_inputs
+
+    sample = Sample(cat, PAIR, cut=None)
+    ng = calibrated_leakage_inputs(sample, "ngmix")
+    sn = calibrated_leakage_inputs(sample, "shearnet")
+    assert ng["correct_psf_leakage"] is True
+    assert sn["correct_psf_leakage"] is False
+    assert ng["R"] == pytest.approx((TRUTH["ngmix"]["R"],) * 2)
+    assert sn["R"] == pytest.approx((TRUTH["shearnet"]["R"],) * 2)
+
+    # what PSFLeakagePanelMaker(correct_psf_leakage=True) does, with one bin:
+    # e - R^PSF e^PSF. The inputs are already / R, so this is (e - R^PSF e^PSF) / R.
+    # Slope noise here is ~0.01 for ngmix and ~0.004 for ShearNet (20000 objects).
+    for i, x in ((0, "e1"), (1, "e2")):
+        raw_slope = np.polyfit(ng[f"{x}_psf"], ng[f"{x}_gal"], 1)[0]
+        injected = TRUTH["ngmix"]["rho"] / TRUTH["ngmix"]["R"]
+        assert raw_slope == pytest.approx(injected, abs=0.04)
+        r = ng[f"r{i + 1}{i + 1}_psf"]
+        corrected = ng[f"{x}_gal"] - r.mean() * ng[f"{x}_psf"]
+        assert np.polyfit(ng[f"{x}_psf"], corrected, 1)[0] == pytest.approx(0.0, abs=0.04)
+        # ShearNet: only / R; its original-image leakage survives, scaled
+        slope = np.polyfit(sn[f"{x}_psf"], sn[f"{x}_gal"], 1)[0]
+        expected = TRUTH["shearnet"]["alpha"][i] / TRUTH["shearnet"]["R"]
+        assert slope == pytest.approx(expected, abs=0.016)
+
+
+def test_figure_5_turns_the_upstream_correction_on_for_ngmix_only(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    import psf_leakage
+
+    path = tmp_path / "fourth.fits"
+    build(3000, seed=9).writeto(path)
+    seen = {}
+
+    class FakeMaker:
+        def __init__(self, **kwargs):
+            seen[len(seen)] = kwargs
+
+        def make_panel(self, ax, x_psf, xlab, return_data):
+            return {f"alpha_full_{k}": 0.0 for k in (1, 2)} | {
+                f"alpha_err_{k}": 1.0 for k in (1, 2)}
+
+    def fake_compare(*args, **kwargs):
+        plt.subplots(1, 2)
+
+    monkeypatch.setattr(psf_leakage, "_import_superbit",
+                        lambda: (FakeMaker, lambda *a, **k: None, fake_compare))
+    psf_leakage.main(["--fits", str(path), "--out", str(tmp_path / "leak"),
+                      "--format", "png"])
+    shearnet_kwargs, ngmix_kwargs = seen[0], seen[1]
+    assert shearnet_kwargs["correct_psf_leakage"] is False
+    assert ngmix_kwargs["correct_psf_leakage"] is True
+    # ngmix is handed its metacal shape over R, ShearNet its original one over R
+    sample = Sample(Catalog(path), ["zero"])
+    keep = sample.select["noshear"][0].all(axis=0)
+    e_ng = sample.g["ngmix"]["noshear"][0][:, keep].mean(axis=0)[:, 0]
+    r = responses(sample, "ngmix", pair=("zero", "zero"))["R"][0][0, 0]
+    np.testing.assert_allclose(ngmix_kwargs["e1_gal"], e_ng / r)
+
+
+def test_ngmix_selection_response_is_measured_on_the_rpsf_corrected_shape(cat, monkeypatch):
+    """R^S differences the mean shape over the 1p/1m selections; for ngmix that
+    shape is R^PSF-corrected, so R^S moves by <R^PSF> (<e^PSF>_1p - <e^PSF>_1m) / 2 step."""
+    sample = Sample(cat, PAIR, cut=PAPER_CUT)
+    corrected = responses(sample, "ngmix")["RS"][0]
+    monkeypatch.setitem(shear_stats.PSF_CORRECTED, "ngmix", False)
+    uncorrected = responses(sample, "ngmix")["RS"][0]
+
+    p, q = sample.scene_index("g1_plus"), sample.scene_index("g1_minus")
+    rho = TRUTH["ngmix"]["rho"]
+    expected = np.zeros((2, 2))
+    for s in (p, q):
+        for j, (plus, minus) in enumerate((("1p", "1m"), ("2p", "2m"))):
+            psf_p = sample.psf_g[s][sample.select[plus][s]].mean(axis=0)
+            psf_m = sample.psf_g[s][sample.select[minus][s]].mean(axis=0)
+            expected[:, j] += 0.5 * rho * (psf_p - psf_m) / (2 * STEP)
+    np.testing.assert_allclose(uncorrected - corrected, expected, rtol=1e-6, atol=1e-12)
+    assert abs(expected[0, 0]) > 0      # the fixture's selection does see e^PSF

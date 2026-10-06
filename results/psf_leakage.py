@@ -18,10 +18,19 @@ intrinsic ellipticity while leaving the leakage signal.
 
 THE SHAPE AND THE SAMPLE
 ------------------------
-Both estimators are fitted on their **raw** shape -- ``g_original``, the
-measurement on the stamp as rendered, with no shear-response division and no
-PSF-response subtraction -- ring-averaged over the four stations of the
-**unsheared** population (scene ``zero``).
+By default (``--shape calibrated``) each estimator is shown on the shape its m
+and c are calibrated from, ring-averaged over the four stations of the
+**unsheared** population (scene ``zero``):
+
+* ngmix: ``g_noshear`` (metacal), **R^PSF-corrected** and divided by its
+  ``R = <R^gamma> + R^S``. The R^PSF correction is ``superbit_lensing``'s own
+  (``PSFLeakagePanelMaker(correct_psf_leakage=True)``: ``R^PSF`` per
+  ``e^PSF`` percentile bin, LITB III Appendix D);
+* ShearNet: ``g_original`` divided by its ``R = <R^gamma> + R^S``, **never**
+  R^PSF-corrected.
+
+``--shape raw`` restores the previous figure: both on ``g_original``, no
+response division, no R^PSF.
 
 With the default ``--cut metacal`` the sample is the paper's cut (ngmix
 T/Tpsf > 1 and s2n > 10 on the noshear fit, see :mod:`shear_stats`), and an
@@ -32,7 +41,7 @@ cancels intrinsic shape. The same objects are used for both estimators.
 Usage
 -----
     python psf_leakage.py --fits ../evaluations/fourth.fits
-    python psf_leakage.py --fits ../evaluations/fourth.fits --cut none
+    python psf_leakage.py --fits ../evaluations/fourth.fits --shape raw
 """
 
 from __future__ import annotations
@@ -52,10 +61,14 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from catalog import DISPLAY_NAME, Catalog  # noqa: E402
 from paper_labels import label_psf_leakage  # noqa: E402
-from shear_stats import Sample, cut_from_name, leakage_inputs  # noqa: E402
+from shear_stats import (Sample, calibrated_leakage_inputs, cut_from_name,  # noqa: E402
+                         leakage_inputs)
 
-#: --shape -> the catalog variant fitted
-SHAPES = {"raw": "original", "noshear": "noshear"}
+#: --shape choices. calibrated: each estimator's own m/c pipeline (see above).
+SHAPES = ("calibrated", "raw")
+
+#: The shape names paper_labels uses to label the y axis.
+LABEL_SHAPE = {"calibrated": "rgamma", "raw": "raw"}
 
 
 def _import_superbit():
@@ -79,7 +92,8 @@ def _import_superbit():
     return PSFLeakagePanelMaker, save_all_panels_to_fits, plot_psf_leakage_comparison
 
 
-def panel_fits_for(data, out_fits, *, nbin=10, min_count=20, njac=30):
+def panel_fits_for(data, out_fits, *, nbin=10, min_count=20, njac=30,
+                   correct_psf_leakage=False):
     """Build superbit panel data from :func:`shear_stats.leakage_inputs` and
     write its panel FITS.
 
@@ -98,9 +112,9 @@ def panel_fits_for(data, out_fits, *, nbin=10, min_count=20, njac=30):
         NBIN=nbin,
         MIN_COUNT=min_count,
         njac=njac,
-        # The response correction is what this figure is measuring, so it must
-        # not be applied to the shapes before the slope is fitted.
-        correct_psf_leakage=False,
+        # upstream's R^PSF correction, for ngmix only (calibrated_leakage_inputs
+        # says which); ShearNet is never R^PSF-corrected
+        correct_psf_leakage=correct_psf_leakage,
     )
 
     panels = []
@@ -144,9 +158,9 @@ def main(argv=None):
     p.add_argument("--cut", choices=("metacal", "none"), default="metacal")
     p.add_argument("--min-t-ratio", type=float, default=None)
     p.add_argument("--min-s2n", type=float, default=None)
-    p.add_argument("--shape", choices=sorted(SHAPES), default="raw",
-                   help="raw (default): the original-image measurement, what the "
-                        "paper shows. noshear: metacal's reconvolved image.")
+    p.add_argument("--shape", choices=SHAPES, default="calibrated",
+                   help="calibrated (default): ngmix noshear - R^PSF e^PSF over R, "
+                        "ShearNet original over R. raw: both g_original, uncorrected.")
     p.add_argument(
         "--panel-dir", default=None,
         help="keep the intermediate per-estimator panel FITS here",
@@ -176,12 +190,19 @@ def main(argv=None):
     try:
         panel_files = []
         for estimator in chosen:
-            data = leakage_inputs(sample, estimator, scene="zero",
-                                  variant=SHAPES[args.shape])
+            if args.shape == "calibrated":
+                data = calibrated_leakage_inputs(sample, estimator, scene="zero")
+            else:
+                data = leakage_inputs(sample, estimator, scene="zero", variant="original")
+                data.update(correct_psf_leakage=False, shape="original, uncorrected")
             out_fits = panel_dir / f"panels_{estimator}.fits"
             a1, a1e, a2, a2e = panel_fits_for(
-                data, out_fits, nbin=args.nbin, min_count=args.min_count, njac=args.njac)
-            print(f"  {DISPLAY_NAME.get(estimator, estimator)} [{args.shape}, "
+                data, out_fits, nbin=args.nbin, min_count=args.min_count, njac=args.njac,
+                correct_psf_leakage=data["correct_psf_leakage"])
+            r_note = (f", R = ({data['R'][0]:.4f}, {data['R'][1]:.4f})"
+                      if "R" in data else "")
+            print(f"  {DISPLAY_NAME.get(estimator, estimator)} [{data['shape']}"
+                  f"{', R^PSF-corrected' if data['correct_psf_leakage'] else ''}{r_note}, "
                   f"{data['n_objects']} of {data['n_total']} objects]: "
                   f"alpha1 = {a1:+.4f} +/- {a1e:.4f}, "
                   f"alpha2 = {a2:+.4f} +/- {a2e:.4f}")
@@ -203,7 +224,7 @@ def main(argv=None):
         from paper_colors import COLORS, recolor_artists, style_leakage_lines
         recolor_artists(fig, {"magenta": COLORS[chosen[0]], "teal": COLORS[chosen[1]]})
         style_leakage_lines(fig)
-        label_psf_leakage(fig, shapes=[args.shape] * len(chosen))
+        label_psf_leakage(fig, shapes=[LABEL_SHAPE[args.shape]] * len(chosen))
         for fmt in args.format:
             path = stem.with_suffix(f".{fmt}")
             fig.savefig(path, dpi=args.dpi, bbox_inches="tight")

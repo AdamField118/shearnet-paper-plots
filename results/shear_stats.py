@@ -48,7 +48,8 @@ THE SHAPES
   (the network run on ngmix's nine reconvolved images) plus its ``R^S``.
 * ngmix: ``NGMIX.g_noshear`` -- the reconvolved metacal shape -- with the
   population PSF correction ``<e> - <R^PSF><e^PSF>`` (``e^PSF`` is
-  ``STAMP.psf_g``), calibrated by its own ``R^gamma + R^S``.
+  ``STAMP.psf_g``), calibrated by its own ``R^gamma + R^S``. Every ngmix mean
+  is corrected, the ones inside ``R^S`` included; no ShearNet value ever is.
 
 UNCERTAINTIES
 -------------
@@ -262,22 +263,28 @@ def _population_means(sample: Sample, est: str, blocks: _Blocks) -> None:
     for mtype in METACAL_SHEARED:
         blocks.count(f"n_{mtype}", sel[mtype])
         blocks.add(f"e_{mtype}", sample.shape[est], sel[mtype])
+        blocks.add(f"gpsf_{mtype}", sample.psf_g, sel[mtype])
 
 
 def _calibrated(t: dict, step: float, psf_corrected: bool) -> dict:
     """Per-scene ``<e>`` (PSF-corrected if asked), ``<R^gamma>``, ``R^S``, ``<R^PSF>``."""
     n = t["n"][:, None]
-    e = t["e"] / n
     Rg = t["Rg"] / n[..., None]
     Rp = t["Rp"] / n[..., None]
-    gpsf = t["gpsf"] / n
+    def corrected(shape_sum, psf_sum, count):
+        """Mean shape of a selection, R^PSF-corrected when the estimator is."""
+        mean = shape_sum / count[:, None]
+        if psf_corrected:
+            mean = mean - np.einsum("sij,sj->si", Rp, psf_sum / count[:, None])
+        return mean
+
     RS = np.zeros_like(Rg)
     for j, (plus, minus) in enumerate((("1p", "1m"), ("2p", "2m"))):
-        mean_p = t[f"e_{plus}"] / t[f"n_{plus}"][:, None]
-        mean_m = t[f"e_{minus}"] / t[f"n_{minus}"][:, None]
+        # R^S of the shape actually reported: for ngmix the R^PSF-corrected one
+        mean_p = corrected(t[f"e_{plus}"], t[f"gpsf_{plus}"], t[f"n_{plus}"])
+        mean_m = corrected(t[f"e_{minus}"], t[f"gpsf_{minus}"], t[f"n_{minus}"])
         RS[:, :, j] = (mean_p - mean_m) / (2.0 * step)
-    if psf_corrected:
-        e = e - np.einsum("sij,sj->si", Rp, gpsf)
+    e = corrected(t["e"], t["gpsf"], t["n"])
     return {"e": e, "Rg": Rg, "RS": RS, "R": Rg + RS, "Rp": Rp}
 
 
@@ -390,3 +397,37 @@ def leakage_inputs(sample: Sample, est: str, scene: str = "zero",
         "r11_psf": rpsf[finite, 0, 0], "r22_psf": rpsf[finite, 1, 1],
         "n_objects": int(finite.sum()), "n_total": int(keep.size),
     }
+
+
+#: Figure 5's shape per estimator, the same pipeline its m and c come from:
+#: ngmix's metacal noshear shape (R^PSF-corrected), ShearNet's original-image
+#: shape (never R^PSF-corrected).
+LEAKAGE_VARIANT = {"shearnet": "original", "ngmix": "noshear"}
+
+
+def calibrated_leakage_inputs(sample: Sample, est: str, scene: str = "zero",
+                              njack: int = DEFAULT_NJACK) -> dict:
+    """Figure 5's input, calibrated the way m and c are.
+
+    * every shape is divided by the estimator's own diagonal
+      ``R = <R^gamma> + R^S``, measured on the selected records of ``scene``;
+    * ngmix's is ``g_noshear`` and is **R^PSF-corrected**; ShearNet's is
+      ``g_original`` and is **not**. The correction itself is
+      ``superbit_lensing``'s (``PSFLeakagePanelMaker(correct_psf_leakage=True)``:
+      ``e - R^PSF_ii e^PSF_i`` with ``R^PSF_ii`` the mean in each ``e^PSF``
+      percentile bin, LITB III Appendix D), so this only sets
+      ``correct_psf_leakage`` and hands over ``R^PSF / R`` -- which makes the
+      result ``(e - R^PSF e^PSF) / R``, LITB III Eq. 24's order.
+    """
+    data = leakage_inputs(sample, est, scene=scene, variant=LEAKAGE_VARIANT[est])
+    R = responses(sample, est, njack=njack, pair=(scene, scene))["R"][0]
+    r1, r2 = float(R[0, 0]), float(R[1, 1])
+    data["e1_gal"] = data["e1_gal"] / r1
+    data["e2_gal"] = data["e2_gal"] / r2
+    data["r11_psf"] = data["r11_psf"] / r1
+    data["r22_psf"] = data["r22_psf"] / r2
+    data["correct_psf_leakage"] = bool(PSF_CORRECTED[est])
+    data["R"] = (r1, r2)
+    data["shape"] = (f"(g_{LEAKAGE_VARIANT[est]} - R^PSF e^PSF) / R" if PSF_CORRECTED[est]
+                     else f"g_{LEAKAGE_VARIANT[est]} / R")
+    return data

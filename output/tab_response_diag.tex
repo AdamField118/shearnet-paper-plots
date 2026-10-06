@@ -1,9 +1,15 @@
-% tab:response-diag from fourth.fits
-% columns: response & estimator & R11 & R22 & R12 & R21
-% entries are MEASURED MINUS TARGET: R^gamma against the identity,
-% R^PSF against zero, so every column should read consistent with 0.
-% jackknife blocks: 20   sample cut: none
-$R^{\gamma}$ & \textsc{shearnet} & $-0.0927 \pm 0.0006$ & $-0.0973 \pm 0.0006$ & $+0.0110 \pm 0.0004$ & $+0.0126 \pm 0.0003$ \\
-$R^{\gamma}$ & \textsc{ngmix} & $-0.3589 \pm 0.0026$ & $-0.3428 \pm 0.0022$ & $-0.0010 \pm 0.0028$ & $+0.0103 \pm 0.0027$ \\
-$R^{\rm PSF}$ & \textsc{shearnet} & $-0.3749 \pm 0.0006$ & $-0.2772 \pm 0.0005$ & $-0.0024 \pm 0.0002$ & $-0.0043 \pm 0.0002$ \\
-$R^{\rm PSF}$ & \textsc{ngmix} & $+0.2814 \pm 0.0025$ & $+0.2685 \pm 0.0023$ & $-0.0014 \pm 0.0024$ & $+0.0052 \pm 0.0024$ \\
+% tab:response-diag from d4_unit_fourth_default.fits (d4_unit_fourth)
+% columns: response & estimator & 11 & 22 & 12 & 21
+% entries are means over the +g1 and -g1 populations and every ring station;
+% errors: delete-one-block jackknife over objects, 20 blocks
+% cut: ngmix T_t/Tpsf_t > 1 and s2n_t > 10 (flags_t == 0) on each metacal product t's own fit; sample = noshear selection; R = <R^gamma> + R^S
+%   g1_plus: 525854 of 799980 records selected (65.7%)
+%   g1_minus: 526086 of 799980 records selected (65.8%)
+% R = R^gamma + R^S, shearnet: R11 = +1.0457 +/- 0.0016, R22 = +1.0412 +/- 0.0019, R12 = +0.0078 +/- 0.0011, R21 = +0.0077 +/- 0.0012
+% R = R^gamma + R^S, ngmix: R11 = +0.7657 +/- 0.0026, R22 = +0.7655 +/- 0.0056, R12 = +0.0027 +/- 0.0043, R21 = -0.0027 +/- 0.0029
+$R^{\gamma}$ & \textsc{shearnet} & $+0.9676 \pm 0.0006$ & $+0.9644 \pm 0.0005$ & $+0.0069 \pm 0.0004$ & $+0.0072 \pm 0.0004$ \\
+$R^{\gamma}$ & \textsc{ngmix} & $+0.7158 \pm 0.0025$ & $+0.7145 \pm 0.0047$ & $+0.0023 \pm 0.0043$ & $-0.0007 \pm 0.0029$ \\
+$R^{\rm S}$ & \textsc{shearnet} & $+0.0781 \pm 0.0015$ & $+0.0767 \pm 0.0021$ & $+0.0008 \pm 0.0012$ & $+0.0006 \pm 0.0011$ \\
+$R^{\rm S}$ & \textsc{ngmix} & $+0.0499 \pm 0.0010$ & $+0.0511 \pm 0.0021$ & $+0.0004 \pm 0.0011$ & $-0.0020 \pm 0.0015$ \\
+$R^{\rm PSF}$ & \textsc{shearnet} & $-0.2312 \pm 0.0010$ & $-0.1722 \pm 0.0007$ & $-0.0007 \pm 0.0002$ & $-0.0041 \pm 0.0002$ \\
+$R^{\rm PSF}$ & \textsc{ngmix} & $+0.2624 \pm 0.0032$ & $+0.2514 \pm 0.0034$ & $-0.0025 \pm 0.0037$ & $+0.0035 \pm 0.0031$ \\

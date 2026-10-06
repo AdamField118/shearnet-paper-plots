@@ -17,6 +17,9 @@
 # (results/shear_stats.py says exactly how). Figure 3 is NEVER cut: it shows the
 # whole population, because it is what motivates the cut. --cut none turns the
 # cut off everywhere else too.
+#
+# R^PSF. Every ngmix shape (m, c, Figure 5) has metacal's PSF response removed;
+# ShearNet's never does. Both are divided by their own R = <R^gamma> + R^S.
 
 set -euo pipefail
 
@@ -98,7 +101,7 @@ echo
 DELIVERABLES=(
     "tab:response-diag|results|response_diagnostics.py|--out $OUTDIR/tab_response_diag.tex|cut"
     "fig:response_snr|results|response_vs_snr.py|--out $OUTDIR/response_vs_snr.pdf|"
-    "fig:psf-leakage|results|psf_leakage.py|--shape raw --out $OUTDIR/psf_leakage|cut"
+    "fig:psf-leakage|results|psf_leakage.py|--out $OUTDIR/psf_leakage|cut"
 )
 
 FAILED=()
