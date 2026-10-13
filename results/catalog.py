@@ -1,7 +1,7 @@
 """Reader for the evaluation catalogs ``shearnet-eval`` writes.
 
-One file per evaluation, ``<run>/evaluations/<name>/<run_name>_<name>.fits``,
-schema ``shearnet-eval`` version 1 (ShearNet ``docs/catalog.md``). It holds raw
+A merged estimator catalog uses
+schema ``shearnet-eval`` version 2 (ShearNet ``docs/catalog.md``). It holds raw
 measurements only: no response, bias, cut or correction. Everything derived
 lives in :mod:`shear_stats`; this module only knows the layout.
 
@@ -32,7 +32,7 @@ import numpy as np
 from astropy.io import fits
 
 SCHEMA = "shearnet-eval"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 #: The unit tests, in the paper's order.
 RUNS = ("first", "second", "third", "fourth")
@@ -101,6 +101,16 @@ class Catalog:
             rid = np.asarray(data[rows]["record_id"])
             if not np.array_equal(rid, rows):
                 raise CatalogError(f"{table}.record_id is not 0..NRECORD-1 in order")
+            for key in ("object_uid", "observation_uid"):
+                if key not in data.names:
+                    raise CatalogError(f"{table} is missing {key}")
+                values = np.asarray(data[rows][key])
+                reference = np.asarray(self._hdul["TRUTH"].data[rows][key])
+                if np.any(values == "") or not np.array_equal(values, reference):
+                    raise CatalogError(f"{table}.{key} disagrees with TRUTH")
+        for key in ("input_fingerprint", "metacal_fingerprint"):
+            if not self.has("STAMP", key):
+                raise CatalogError(f"STAMP is missing {key}")
 
     def close(self):
         self._hdul.close()
@@ -170,24 +180,25 @@ class Catalog:
 
 
 def find_run(root, name: str) -> Optional[Path]:
-    """The ``default`` evaluation catalog of unit test ``name`` under ``root``.
+    """The merged catalog of unit test ``name`` under ``root``.
 
     ``root`` can be a directory the catalogs were copied into, or ShearNet's
     ``runs/unit_tests`` directory itself, so nothing has to be copied:
 
         <root>/<name>.fits
-        <root>/d4_unit_<name>_default.fits
-        <root>/<name>/evaluations/default/<run_name>_default.fits
-        <root>/unit_tests/<name>/evaluations/default/<run_name>_default.fits
+        <root>/<name>/generation-*/merged.fits
+        <root>/unit_tests/<name>/generation-*/merged.fits
+
+    Each ShearNet submission is a new generation; the newest one whose merge
+    finished (``merge.completed``) is used.
     """
     root = Path(root).expanduser()
-    for candidate in (root / f"{name}.fits", root / f"d4_unit_{name}_default.fits"):
-        if candidate.is_file():
-            return candidate
+    if (root / f"{name}.fits").is_file():
+        return root / f"{name}.fits"
     for run_dir in (root / name, root / "unit_tests" / name):
-        found = sorted((run_dir / "evaluations" / "default").glob("*_default.fits"))
-        if len(found) == 1:
-            return found[0]
-        if len(found) > 1:
-            raise CatalogError(f"more than one default catalog in {run_dir}: {found}")
+        finished = [g for g in run_dir.glob("generation-*")
+                    if (g / "merged.fits").is_file() and (g / "merge.completed").is_file()]
+        if finished:
+            newest = max(finished, key=lambda g: (g / "merge.completed").stat().st_mtime)
+            return newest / "merged.fits"
     return None

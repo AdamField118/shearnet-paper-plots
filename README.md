@@ -186,15 +186,15 @@ Re-run the notebook only when the stamp itself should change.
 
 ### `results/`
 
-Everything here reads the catalogs `shearnet-eval` writes
-(`<run>/evaluations/default/<run_name>_default.fits`, schema `shearnet-eval` v1;
-ShearNet's `docs/catalog.md` lists every column). A catalog holds raw
+Everything here reads ShearNet's merged catalogs
+(`<run>/generation-*/merged.fits`, schema `shearnet-eval` v2; ShearNet's
+`docs/catalog.md` lists every column). A catalog holds raw
 measurements only, so every response, cut and bias is formed here.
 
 ```bash
-# the whole paper, straight from ShearNet's run directories (nothing copied)
-./run_all.sh --go --runs ~/ShearNet/runs/unit_tests \
-    --fits ~/ShearNet/runs/unit_tests/fourth/evaluations/default/d4_unit_fourth_default.fits
+# the whole paper, straight from ShearNet's run directories (nothing copied);
+# each unit test's newest finished generation is used
+./run_all.sh --go --runs ~/weak_lensing/ShearNet/runs/unit_tests
 ```
 
 | deliverable | script | sample |

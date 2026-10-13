@@ -151,3 +151,16 @@ def test_no_function_local_import_shadows_a_module_level_one():
                             "function and breaks every other use of it"
                         )
     assert not problems, "\n".join(problems)
+
+
+def test_runs_alone_finds_the_fiducial_generation(tmp_path):
+    """ShearNet writes runs/unit_tests/<name>/generation-*/merged.fits; --runs
+    is enough, the fourth unit test's newest finished generation is the --fits."""
+    generation = tmp_path / "unit_tests" / "fourth" / "generation-abc"
+    generation.mkdir(parents=True)
+    (generation / "merged.fits").write_bytes(b"")
+    (generation / "merge.completed").write_text("complete\n")
+
+    result = _dry_run("--runs", str(tmp_path / "unit_tests"))
+    assert result.returncode == 0, result.stderr
+    assert f"--fits {generation / 'merged.fits'}" in result.stdout

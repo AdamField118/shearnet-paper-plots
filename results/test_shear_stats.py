@@ -207,10 +207,16 @@ def test_columns_reshape_to_scene_station_object(cat):
 
 
 def test_find_run_reads_a_shearnet_runs_directory(tmp_path, fixture_path):
-    run = tmp_path / "unit_tests" / "third" / "evaluations" / "default"
-    run.mkdir(parents=True)
-    target = run / "d4_unit_third_default.fits"
-    target.symlink_to(fixture_path)
+    import os
+
+    run = tmp_path / "unit_tests" / "third"
+    for i, generation in enumerate(("generation-old", "generation-new", "generation-busy")):
+        (run / generation).mkdir(parents=True)
+        (run / generation / "merged.fits").symlink_to(fixture_path)
+        if generation != "generation-busy":  # its merge has not finished
+            (run / generation / "merge.completed").write_text("complete\n")
+            os.utime(run / generation / "merge.completed", (i, i))
+    target = run / "generation-new" / "merged.fits"
     assert find_run(tmp_path, "third") == target
     assert find_run(tmp_path / "unit_tests", "third") == target
     assert find_run(tmp_path, "first") is None

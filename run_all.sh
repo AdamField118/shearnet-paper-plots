@@ -4,12 +4,12 @@
 #
 #   ./run_all.sh                                    # dry run: print, produce nothing
 #   ./run_all.sh --go --fits evaluations/fourth.fits --runs evaluations
-#   ./run_all.sh --go --runs ~/ShearNet/runs/unit_tests \
-#                --fits ~/ShearNet/runs/unit_tests/fourth/evaluations/default/d4_unit_fourth_default.fits
+#   ./run_all.sh --go --runs ~/weak_lensing/ShearNet/runs/unit_tests
 #
-# The catalogs are the ones `shearnet-eval` writes (schema shearnet-eval v1).
+# The catalogs are ShearNet's merged catalogs (schema shearnet-eval v2).
 # --runs may be a directory of first.fits ... fourth.fits, or ShearNet's
-# runs/unit_tests itself, so nothing has to be copied.
+# runs/unit_tests itself (the newest finished generation of each), so nothing
+# has to be copied. Without --fits, the fourth unit test found there is used.
 #
 # THE CUT. Table 2 and Figures 4 and 5 are measured on the sample that passes
 # ngmix's own fit: T/Tpsf > 1 and s2n > 10 (flags == 0), applied right before m,
@@ -38,6 +38,7 @@ usage() {
 Options:
   --go                  actually run (default is a dry run)
   --fits PATH           the fiducial (UT4) catalog: Table 2, Figures 3 and 5
+                        (default: the fourth unit test under --runs)
   --runs DIR            the four unit-test catalogs: Figure 4
   --out DIR             where figures and .tex fragments go (default: output/)
   --cut metacal|none    the sample cut (default metacal); never applied to Figure 3
@@ -91,6 +92,12 @@ fi
 if [[ -n "$RUNS" && ! -d "$RUNS" ]]; then
     echo "--runs is not a directory: $RUNS" >&2
     exit 1
+fi
+if [[ -z "$FITS" && -n "$RUNS" ]]; then
+    FITS="$(python -c 'import sys; sys.path.insert(0, sys.argv[1])
+from catalog import find_run
+print(find_run(sys.argv[2], "fourth") or "")' "$ROOT/results" "$RUNS")"
+    [[ -n "$FITS" ]] && echo "fiducial catalog: $FITS"
 fi
 
 echo "--- what the paper asks for ---"

@@ -22,6 +22,7 @@ the measurements are a linear model whose answers are known:
 from __future__ import annotations
 
 import argparse
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -75,10 +76,17 @@ def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HD
     e_true = np.stack([e_rot.real, e_rot.imag], axis=1) + g_applied
     gpsf = psf_g[catalog_row]
 
-    keys = {"record_id": np.arange(rows), "catalog_row": catalog_row,
+    object_uids = np.array([hashlib.sha256(f"fixture:{seed}:{i}".encode()).hexdigest()
+                            for i in range(n)])
+    observation_uids = np.array([hashlib.sha256(f"{object_uids[catalog_row[i]]}:{scene_id[i]}:{rotation_id[i]}".encode()).hexdigest()
+                                 for i in range(rows)])
+    keys = {"object_uid": object_uids[catalog_row], "observation_uid": observation_uids,
+            "record_id": np.arange(rows), "catalog_row": catalog_row,
             "scene_id": scene_id.astype(np.int16), "rotation_id": rotation_id.astype(np.int16)}
     tables = {"TRUTH": dict(keys, e_prepsf=e_true, g_applied=g_applied),
-              "STAMP": dict(keys, psf_g=gpsf, psf_flags=np.zeros(rows, np.int32),
+              "STAMP": dict(keys, input_fingerprint=np.ones((rows, 2, 4), np.float32),
+                            metacal_fingerprint=np.ones((rows, 9, 2, 4), np.float32),
+                            psf_g=gpsf, psf_flags=np.zeros(rows, np.int32),
                             s2n_stamp=s2n0[catalog_row] * 4.0)}
 
     for est, table in (("ngmix", "NGMIX"), ("shearnet", "SHEARNET")):
@@ -105,7 +113,7 @@ def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HD
         tables[table] = cols
 
     primary = fits.PrimaryHDU()
-    for key, value in (("SCHEMA", "shearnet-eval"), ("SCHEMAV", 1), ("RUNNAME", "fixture"),
+    for key, value in (("SCHEMA", "shearnet-eval"), ("SCHEMAV", 2), ("RUNNAME", "fixture"),
                        ("EVALNAME", "default"), ("NOBJ", n), ("NSCENE", S), ("NROT", K),
                        ("NRECORD", rows), ("MCALSTEP", STEP), ("MCALPSF", "dilate")):
         primary.header[key] = value
@@ -130,6 +138,9 @@ def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HD
 def _fmt(array) -> str:
     array = np.asarray(array)
     width = int(np.prod(array.shape[1:])) if array.ndim > 1 else 1
+    if array.dtype.kind in "SU":
+        characters = array.dtype.itemsize // (4 if array.dtype.kind == "U" else 1)
+        return f"{characters}A"
     if array.dtype.kind == "f":
         code = "D"
     else:

@@ -15,7 +15,8 @@ carries m and c without R^S too, and the selected counts.
 Missing values are NEVER drawn as zero-height bars. --draft explicitly creates
 an empty layout when no results have been supplied.
 
-    python unit_test_bias.py --runs ~/ShearNet/runs/unit_tests --out ../output/unit_test_bias.pdf
+    python unit_test_bias.py --runs ~/weak_lensing/ShearNet/runs/unit_tests \
+        --out ../output/unit_test_bias.pdf
 """
 from __future__ import annotations
 
