@@ -22,12 +22,10 @@ By default (``--shape calibrated``) each estimator is shown on the shape its m
 and c are calibrated from, ring-averaged over the four stations of the
 **unsheared** population (scene ``zero``):
 
-* ngmix: ``g_noshear`` (metacal), **R^PSF-corrected** and divided by its
-  ``R = <R^gamma> + R^S``. The R^PSF correction is ``superbit_lensing``'s own
-  (``PSFLeakagePanelMaker(correct_psf_leakage=True)``: ``R^PSF`` per
-  ``e^PSF`` percentile bin, LITB III Appendix D);
-* ShearNet: ``g_original`` divided by its ``R = <R^gamma> + R^S``, **never**
-  R^PSF-corrected.
+``g_noshear`` (metacal), **R^PSF-corrected** and divided by the estimator's
+own ``R = <R^gamma> + R^S``. The R^PSF correction is ``superbit_lensing``'s own
+(``PSFLeakagePanelMaker(correct_psf_leakage=True)``: ``R^PSF`` per ``e^PSF``
+percentile bin, LITB III Appendix D).
 
 ``--shape raw`` restores the previous figure: both on ``g_original``, no
 response division, no R^PSF.
@@ -112,8 +110,7 @@ def panel_fits_for(data, out_fits, *, nbin=10, min_count=20, njac=30,
         NBIN=nbin,
         MIN_COUNT=min_count,
         njac=njac,
-        # upstream's R^PSF correction, for ngmix only (calibrated_leakage_inputs
-        # says which); ShearNet is never R^PSF-corrected
+        # upstream's R^PSF correction (calibrated_leakage_inputs says whether)
         correct_psf_leakage=correct_psf_leakage,
     )
 
@@ -159,8 +156,8 @@ def main(argv=None):
     p.add_argument("--min-t-ratio", type=float, default=None)
     p.add_argument("--min-s2n", type=float, default=None)
     p.add_argument("--shape", choices=SHAPES, default="calibrated",
-                   help="calibrated (default): ngmix noshear - R^PSF e^PSF over R, "
-                        "ShearNet original over R. raw: both g_original, uncorrected.")
+                   help="calibrated (default): noshear - R^PSF e^PSF over R. "
+                        "raw: g_original, uncorrected.")
     p.add_argument(
         "--panel-dir", default=None,
         help="keep the intermediate per-estimator panel FITS here",

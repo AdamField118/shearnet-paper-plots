@@ -202,7 +202,8 @@ measurements only, so every response, cut and bias is formed here.
 | Table 2, `tab:response-diag` | `response_diagnostics.py` | cut |
 | Figure 3, `fig:response_snr` | `response_vs_snr.py` | **never cut** |
 | Figure 4, `fig:unit-test-bias` | `unit_test_bias.py` | cut, `R = <R^gamma> + R^S` |
-| Figure 5, `fig:psf-leakage` | `psf_leakage.py` | cut, ring-complete objects; ngmix R^PSF-corrected |
+| Figure 5, `fig:psf-leakage` | `psf_leakage.py` | cut, ring-complete objects; R^PSF-corrected |
+| `tab:timing` | `timing_table.py` | every observation; cost of the metacal measurement (needs `NGMIX.metacal_image_cpu_seconds`) |
 
 **`catalog.py`** is the only module that knows the file layout; **`shear_stats.py`**
 is the only one that forms a statistic. See "The cut, the shapes and the errors"
@@ -213,8 +214,8 @@ with the fitted leakage slope α per estimator. The binning, the jackknife α/β
 the R^PSF correction and the drawing are `superbit_lensing`'s
 (`PSFLeakagePanelMaker`, `save_all_panels_to_fits`, `plot_psf_leakage_comparison`);
 this script only selects the objects and columns, ring-averaged over the unsheared
-population: ngmix `g_noshear` with `correct_psf_leakage=True`, ShearNet
-`g_original` with it off, both divided by their own `R = <R^gamma> + R^S`.
+population: each estimator's `g_noshear` with `correct_psf_leakage=True`,
+divided by its own `R = <R^gamma> + R^S`.
 `--shape raw` draws the uncorrected `g_original` of both instead.
 
 **`make_fixture.py`** writes a small catalog in the real schema with *known injected
@@ -331,11 +332,14 @@ m by about -0.15; with it m is the injected value.
 Figure 3 is never cut, because it is what motivates the cut. Its S/N axis is ngmix's
 `s2n_noshear`, the quantity the cut is placed on.
 
-**The shapes, and R^PSF.** Every ngmix number is R^PSF-corrected; no ShearNet
-number is. Both are divided by their own `R = <R^gamma> + R^S`.
+**The shapes, and R^PSF.** Both estimators are calibrated the same way: the shape
+is `g_noshear` (the estimator on metacal's noshear image), R^PSF-corrected and
+divided by its own `R = <R^gamma> + R^S`. It has to be the noshear shape, because
+`R^gamma` and `R^PSF` describe the estimator on reconvolved images: ShearNet's
+`g_original` responds ~2% more than that, and calibrating it by the metacal R
+left m1 = +0.019 in UT1.
 
-* ShearNet: `SHEARNET.g_original` (the network on the stamp as rendered).
-* ngmix: `NGMIX.g_noshear` (metacal). For m and c the correction is the population
+* For m and c the PSF correction is the population
   one, `<e> - <R^PSF><e^PSF>` (`e^PSF` = `STAMP.psf_g`); for Figure 5 it is
   `superbit_lensing`'s per-object one, `e - R^PSF e^PSF` with `R^PSF` the mean in
   each `e^PSF` percentile bin (LITB III Appendix D). Either way the shape is

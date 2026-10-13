@@ -18,8 +18,9 @@
 # whole population, because it is what motivates the cut. --cut none turns the
 # cut off everywhere else too.
 #
-# R^PSF. Every ngmix shape (m, c, Figure 5) has metacal's PSF response removed;
-# ShearNet's never does. Both are divided by their own R = <R^gamma> + R^S.
+# THE SHAPES. Both estimators are calibrated the same way: their metacal noshear
+# shape, with metacal's PSF response removed, divided by their own
+# R = <R^gamma> + R^S.
 
 set -euo pipefail
 
@@ -48,7 +49,7 @@ Options:
 
 fig:psf-properties and the architecture schematic do not read a catalog: run
 psf/psf_properties.py and architecture/shearnet_d4_architecture_4plots.py
-directly. tab:timing is produced outside this repository.
+directly.
 USAGE
 }
 
@@ -109,6 +110,7 @@ DELIVERABLES=(
     "tab:response-diag|results|response_diagnostics.py|--out $OUTDIR/tab_response_diag.tex|cut"
     "fig:response_snr|results|response_vs_snr.py|--out $OUTDIR/response_vs_snr.pdf|"
     "fig:psf-leakage|results|psf_leakage.py|--out $OUTDIR/psf_leakage|cut"
+    "tab:timing|results|timing_table.py|--out $OUTDIR/tab_timing.tex|"
 )
 
 FAILED=()

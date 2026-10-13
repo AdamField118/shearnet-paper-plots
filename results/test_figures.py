@@ -131,3 +131,25 @@ def test_the_x_axis_is_log_with_one_two_five_ticks():
     mantissas = {round(t / 10 ** np.floor(np.log10(t)), 6) for t in ticks}
     assert mantissas <= {1.0, 2.0, 5.0}, f"unexpected tick mantissas: {mantissas}"
     plt.close(fig)
+
+
+# --------------------------------------------------------------------------
+# tab:timing
+# --------------------------------------------------------------------------
+
+def test_timing_table_splits_the_metacal_cost(tmp_path):
+    from catalog import Catalog
+    from make_fixture import TRUTH, build
+    from timing_table import PRODUCTS, main, measure
+
+    path = tmp_path / "fourth.fits"
+    build(200, seed=1).writeto(path)
+    t = measure(Catalog(path))
+    injected = TRUTH["timing"]
+    assert t["images_cpu"] == pytest.approx(injected["images"])
+    assert t["ngmix_cpu"] == pytest.approx(injected["metacal"] - injected["images"])
+    assert t["shearnet_gpu"] == pytest.approx(PRODUCTS * injected["shearnet_image"])
+    assert t["device"] == "gpu"
+    out = tmp_path / "tab_timing.tex"
+    assert main(["--fits", str(path), "--out", str(out)]) == 0
+    assert "Ratio of CPU time & & 6.7$\\times$" in out.read_text()

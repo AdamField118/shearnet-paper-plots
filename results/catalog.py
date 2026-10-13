@@ -25,6 +25,7 @@ reading the ``g1`` pair out of a 6 GB file reads 2/5 of the rows it needs.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence
 
@@ -168,6 +169,19 @@ class Catalog:
             stacked = np.stack(parts)
             out[name] = stacked.reshape((len(parts), self.n_rotations, self.n_objects)
                                         + stacked.shape[2:])
+        return out
+
+    def key_values(self, table: str) -> dict:
+        """A ``key``/``value`` table (``TIMING``, ``CONFIG`` ...) as a dict; values
+        that are JSON are decoded, the rest are kept as text."""
+        if not self.has(table):
+            raise CatalogError(f"{self.path.name} has no {table} table")
+        out = {}
+        for key, value in zip(self._hdul[table].data["key"], self._hdul[table].data["value"]):
+            try:
+                out[str(key)] = json.loads(value)
+            except ValueError:
+                out[str(key)] = str(value)
         return out
 
     def column(self, table: str, name: str, scenes: Sequence[str]) -> np.ndarray:

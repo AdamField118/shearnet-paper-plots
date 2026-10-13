@@ -43,13 +43,17 @@ ring orientations".
 
 THE SHAPES
 ----------
-* ShearNet: ``SHEARNET.g_original`` -- the network on the stamp as rendered,
-  metacal never touching it -- calibrated by ShearNet's own metacal ``R^gamma``
-  (the network run on ngmix's nine reconvolved images) plus its ``R^S``.
-* ngmix: ``NGMIX.g_noshear`` -- the reconvolved metacal shape -- with the
-  population PSF correction ``<e> - <R^PSF><e^PSF>`` (``e^PSF`` is
-  ``STAMP.psf_g``), calibrated by its own ``R^gamma + R^S``. Every ngmix mean
-  is corrected, the ones inside ``R^S`` included; no ShearNet value ever is.
+Both estimators are calibrated the same way, each on its own measurements:
+the shape is ``g_noshear`` -- the estimator on metacal's reconvolved noshear
+image -- with the population PSF correction ``<e> - <R^PSF><e^PSF>``
+(``e^PSF`` is ``STAMP.psf_g``), divided by the estimator's own
+``R^gamma + R^S``. Every mean is corrected, the ones inside ``R^S`` included.
+
+The shape has to be the noshear one: ``R^gamma`` and ``R^PSF`` are measured on
+the reconvolved products, so they describe the estimator on reconvolved images
+(dilated PSF, twice the noise variance, correlated noise). ShearNet's ``g_original`` responds
+to shear ~2% more than that (UT1: 0.9955 against R = 0.9766), and dividing it
+by the metacal R left m1 = +0.019.
 
 UNCERTAINTIES
 -------------
@@ -78,9 +82,9 @@ PSF_TYPES = ("1p_psf", "1m_psf", "2p_psf", "2m_psf")
 G1_PAIR = ("g1_plus", "g1_minus")
 
 #: Which column is "the shape" of each estimator, and whether the population
-#: PSF correction applies to it.
-SHAPE_VARIANT = {"shearnet": "original", "ngmix": "noshear"}
-PSF_CORRECTED = {"shearnet": False, "ngmix": True}
+#: PSF correction applies to it (see THE SHAPES).
+SHAPE_VARIANT = {"shearnet": "noshear", "ngmix": "noshear"}
+PSF_CORRECTED = {"shearnet": True, "ngmix": True}
 TABLE = {"shearnet": "SHEARNET", "ngmix": "NGMIX"}
 
 DEFAULT_NJACK = 20
@@ -399,10 +403,8 @@ def leakage_inputs(sample: Sample, est: str, scene: str = "zero",
     }
 
 
-#: Figure 5's shape per estimator, the same pipeline its m and c come from:
-#: ngmix's metacal noshear shape (R^PSF-corrected), ShearNet's original-image
-#: shape (never R^PSF-corrected).
-LEAKAGE_VARIANT = {"shearnet": "original", "ngmix": "noshear"}
+#: Figure 5's shape per estimator, the same pipeline its m and c come from.
+LEAKAGE_VARIANT = SHAPE_VARIANT
 
 
 def calibrated_leakage_inputs(sample: Sample, est: str, scene: str = "zero",
@@ -411,8 +413,8 @@ def calibrated_leakage_inputs(sample: Sample, est: str, scene: str = "zero",
 
     * every shape is divided by the estimator's own diagonal
       ``R = <R^gamma> + R^S``, measured on the selected records of ``scene``;
-    * ngmix's is ``g_noshear`` and is **R^PSF-corrected**; ShearNet's is
-      ``g_original`` and is **not**. The correction itself is
+    * the shape is ``SHAPE_VARIANT``'s, R^PSF-corrected where
+      ``PSF_CORRECTED`` says (both, in the paper). The correction itself is
       ``superbit_lensing``'s (``PSFLeakagePanelMaker(correct_psf_leakage=True)``:
       ``e - R^PSF_ii e^PSF_i`` with ``R^PSF_ii`` the mean in each ``e^PSF``
       percentile bin, LITB III Appendix D), so this only sets

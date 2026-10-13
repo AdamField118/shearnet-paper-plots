@@ -142,15 +142,27 @@ def test_selection_response_removes_the_selection_bias(cat):
         assert _error(b, "m") < 0.01
 
 
-def test_ngmix_c_is_psf_corrected_and_shearnet_c_is_not(cat, monkeypatch):
+@pytest.mark.parametrize("est", ["ngmix", "shearnet"])
+def test_c_is_psf_corrected(cat, monkeypatch, est):
     sample = Sample(cat, PAIR, cut=None)
-    corrected = _value(shear_bias(sample, "ngmix"), "c")
-    monkeypatch.setitem(shear_stats.PSF_CORRECTED, "ngmix", False)
-    raw = _value(shear_bias(sample, "ngmix"), "c")
+    corrected = _value(shear_bias(sample, est), "c")
+    monkeypatch.setitem(shear_stats.PSF_CORRECTED, est, False)
+    raw = _value(shear_bias(sample, est), "c")
     mean_psf_g2 = float(np.mean(sample.psf_g[..., 1]))
-    expected_leak = TRUTH["ngmix"]["rho"] * mean_psf_g2 / TRUTH["ngmix"]["R"]
+    expected_leak = TRUTH[est]["rho"] * mean_psf_g2 / TRUTH[est]["R"]
     assert raw - corrected == pytest.approx(expected_leak, rel=1e-6)
     assert abs(corrected) < 1e-3
+
+
+def test_shearnet_is_calibrated_on_its_noshear_shape(tmp_path):
+    """R^gamma describes the estimator on reconvolved images, so the shape it
+    calibrates must be measured on one too: a g_original response that differs
+    from it must not leak into m."""
+    path = tmp_path / "m.fits"
+    build(3000, seed=4).writeto(path)
+    sample = Sample(Catalog(path), PAIR, cut=None)
+    assert np.array_equal(sample.shape["shearnet"], sample.g["shearnet"]["noshear"])
+    assert abs(_value(shear_bias(sample, "shearnet"), "m")) < 1e-9
 
 
 def test_the_jackknife_drops_whole_objects_from_every_scene(cat):
@@ -227,37 +239,30 @@ def test_find_run_reads_a_shearnet_runs_directory(tmp_path, fixture_path):
 
 
 # --------------------------------------------------------------------------
-# Figure 5 calibrated: ngmix R^PSF-corrected, ShearNet never
+# Figure 5 calibrated: both estimators R^PSF-corrected
 # --------------------------------------------------------------------------
 
-def test_calibrated_leakage_corrects_ngmix_for_rpsf_and_not_shearnet(cat):
+@pytest.mark.parametrize("est", ["ngmix", "shearnet"])
+def test_calibrated_leakage_corrects_for_rpsf(cat, est):
     from shear_stats import calibrated_leakage_inputs
 
     sample = Sample(cat, PAIR, cut=None)
-    ng = calibrated_leakage_inputs(sample, "ngmix")
-    sn = calibrated_leakage_inputs(sample, "shearnet")
-    assert ng["correct_psf_leakage"] is True
-    assert sn["correct_psf_leakage"] is False
-    assert ng["R"] == pytest.approx((TRUTH["ngmix"]["R"],) * 2)
-    assert sn["R"] == pytest.approx((TRUTH["shearnet"]["R"],) * 2)
+    d = calibrated_leakage_inputs(sample, est)
+    assert d["correct_psf_leakage"] is True
+    assert d["R"] == pytest.approx((TRUTH[est]["R"],) * 2)
 
     # what PSFLeakagePanelMaker(correct_psf_leakage=True) does, with one bin:
     # e - R^PSF e^PSF. The inputs are already / R, so this is (e - R^PSF e^PSF) / R.
     # Slope noise here is ~0.01 for ngmix and ~0.004 for ShearNet (20000 objects).
     for i, x in ((0, "e1"), (1, "e2")):
-        raw_slope = np.polyfit(ng[f"{x}_psf"], ng[f"{x}_gal"], 1)[0]
-        injected = TRUTH["ngmix"]["rho"] / TRUTH["ngmix"]["R"]
-        assert raw_slope == pytest.approx(injected, abs=0.04)
-        r = ng[f"r{i + 1}{i + 1}_psf"]
-        corrected = ng[f"{x}_gal"] - r.mean() * ng[f"{x}_psf"]
-        assert np.polyfit(ng[f"{x}_psf"], corrected, 1)[0] == pytest.approx(0.0, abs=0.04)
-        # ShearNet: only / R; its original-image leakage survives, scaled
-        slope = np.polyfit(sn[f"{x}_psf"], sn[f"{x}_gal"], 1)[0]
-        expected = TRUTH["shearnet"]["alpha"][i] / TRUTH["shearnet"]["R"]
-        assert slope == pytest.approx(expected, abs=0.016)
+        raw_slope = np.polyfit(d[f"{x}_psf"], d[f"{x}_gal"], 1)[0]
+        assert raw_slope == pytest.approx(TRUTH[est]["rho"] / TRUTH[est]["R"], abs=0.04)
+        r = d[f"r{i + 1}{i + 1}_psf"]
+        corrected = d[f"{x}_gal"] - r.mean() * d[f"{x}_psf"]
+        assert np.polyfit(d[f"{x}_psf"], corrected, 1)[0] == pytest.approx(0.0, abs=0.04)
 
 
-def test_figure_5_turns_the_upstream_correction_on_for_ngmix_only(tmp_path, monkeypatch):
+def test_figure_5_turns_the_upstream_correction_on_for_both(tmp_path, monkeypatch):
     import matplotlib.pyplot as plt
 
     import psf_leakage
@@ -282,14 +287,15 @@ def test_figure_5_turns_the_upstream_correction_on_for_ngmix_only(tmp_path, monk
     psf_leakage.main(["--fits", str(path), "--out", str(tmp_path / "leak"),
                       "--format", "png"])
     shearnet_kwargs, ngmix_kwargs = seen[0], seen[1]
-    assert shearnet_kwargs["correct_psf_leakage"] is False
+    assert shearnet_kwargs["correct_psf_leakage"] is True
     assert ngmix_kwargs["correct_psf_leakage"] is True
-    # ngmix is handed its metacal shape over R, ShearNet its original one over R
+    # each is handed its metacal noshear shape over its own R
     sample = Sample(Catalog(path), ["zero"])
     keep = sample.select["noshear"][0].all(axis=0)
-    e_ng = sample.g["ngmix"]["noshear"][0][:, keep].mean(axis=0)[:, 0]
-    r = responses(sample, "ngmix", pair=("zero", "zero"))["R"][0][0, 0]
-    np.testing.assert_allclose(ngmix_kwargs["e1_gal"], e_ng / r)
+    for est, kwargs in (("shearnet", shearnet_kwargs), ("ngmix", ngmix_kwargs)):
+        e = sample.g[est]["noshear"][0][:, keep].mean(axis=0)[:, 0]
+        r = responses(sample, est, pair=("zero", "zero"))["R"][0][0, 0]
+        np.testing.assert_allclose(kwargs["e1_gal"], e / r)
 
 
 def test_ngmix_selection_response_is_measured_on_the_rpsf_corrected_shape(cat, monkeypatch):

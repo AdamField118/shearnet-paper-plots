@@ -7,7 +7,7 @@ the measurements are a linear model whose answers are known:
   ``R (e_true + delta_t) + noise`` with ``delta_t`` the metacal shear of that
   product, so ``R^gamma`` is exactly ``R``;
 * the ``*_psf`` products move the shape by ``rho`` per unit PSF shear, so
-  ``R^PSF = rho``, and ngmix's noshear shape leaks ``rho * e^PSF`` -- the
+  ``R^PSF = rho``, and the noshear shape leaks ``rho * e^PSF`` -- the
   population PSF correction removes it exactly;
 * the original-image shapes leak ``alpha * e^PSF`` (the Figure 5 slope);
 * ngmix's S/N on product ``t`` is ``S0 (1 + kappa g_t,1)``: an S/N cut then
@@ -41,16 +41,21 @@ PSF = {"1p_psf": (0, +1), "1m_psf": (0, -1), "2p_psf": (1, +1), "2m_psf": (1, -1
 TRUTH = {
     "ngmix": {"R": 0.75, "R_original": 0.80, "rho": 0.22, "alpha": (0.020, 0.060),
               "noise": 0.06},
-    "shearnet": {"R": 0.98, "R_original": 0.98, "rho": -0.15, "alpha": (-0.006, -0.005),
+    # ShearNet responds more on the stamp than on metacal's images, as in UT1
+    "shearnet": {"R": 0.98, "R_original": 0.998, "rho": -0.15, "alpha": (-0.006, -0.005),
                  "noise": 0.03},
     "kappa": 2.0,          # S/N's dependence on ngmix's measured g1
     "Tpsf": 0.1,
+    # CPU seconds per observation: making the nine metacal products, and all of
+    # ngmix's metacal (products and fits); GPU seconds per ShearNet image
+    "timing": {"images": 0.09, "metacal": 0.6, "shearnet_image": 2e-5},
 }
 
 
 def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HDUList:
-    """The catalog. ``shearnet_m`` scales ShearNet's original-image response, so
-    its m is ``shearnet_m`` (with no selection; to first order with one)."""
+    """The catalog. ``shearnet_m`` scales ShearNet's response to the applied
+    shear but not to metacal's, so its m is ``shearnet_m`` (with no selection;
+    to first order with one)."""
     rng = np.random.default_rng(seed)
     K, S = len(ROTATIONS), len(SCENES)
     kappa = TRUTH["kappa"] if kappa is None else kappa
@@ -93,12 +98,13 @@ def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HD
         p = TRUTH[est]
         nu = noise[est][rotation_id, catalog_row]
         cols = dict(keys)
-        r_orig = p["R_original"] * (1.0 + (shearnet_m if est == "shearnet" else 0.0))
-        cols["g_original"] = r_orig * e_true + np.asarray(p["alpha"]) * gpsf + nu
+        cols["g_original"] = p["R_original"] * e_true + np.asarray(p["alpha"]) * gpsf + nu
         cols["flags_original"] = np.zeros(rows, np.int32)
-        leak = p["rho"] * gpsf if est == "ngmix" else 0.0
+        m = shearnet_m if est == "shearnet" else 0.0
+        e_sheared = e_true + m * g_applied
         for t in METACAL:
-            cols[f"g_{t}"] = p["R"] * (e_true + np.asarray(DELTA[t])) + leak + nu
+            cols[f"g_{t}"] = (p["R"] * (e_sheared + np.asarray(DELTA[t])) + p["rho"] * gpsf
+                              + nu)
             cols[f"flags_{t}"] = np.zeros(rows, np.int32)
         for t, (component, sign) in PSF.items():
             shift = np.zeros(2)
@@ -110,6 +116,9 @@ def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HD
                 cols[f"T_{t}"] = T0[catalog_row]
                 cols[f"Tpsf_{t}"] = np.full(rows, TRUTH["Tpsf"])
                 cols[f"s2n_{t}"] = s2n0[catalog_row] * (1.0 + kappa * cols[f"g_{t}"][:, 0])
+            jitter = rng.uniform(-0.01, 0.01, rows)  # mean zero over the rows
+            cols["metacal_cpu_seconds"] = TRUTH["timing"]["metacal"] + jitter - jitter.mean()
+            cols["metacal_image_cpu_seconds"] = np.full(rows, TRUTH["timing"]["images"])
         tables[table] = cols
 
     primary = fits.PrimaryHDU()
@@ -132,6 +141,13 @@ def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HD
         fits.Column(name="rotation_id", array=np.arange(K), format="K"),
         fits.Column(name="rotation_deg", array=np.asarray(ROTATIONS), format="D")],
         name="ROTATIONS"))
+    timing = {"shearnet.device": "gpu", "shearnet.shearnet_images": str(10 * rows),
+              "shearnet.shearnet_inference_seconds":
+              repr(10 * rows * TRUTH["timing"]["shearnet_image"])}
+    hdus.append(fits.BinTableHDU.from_columns([
+        fits.Column(name="key", array=np.array(list(timing)), format="40A"),
+        fits.Column(name="value", array=np.array(list(timing.values())), format="40A")],
+        name="TIMING"))
     return fits.HDUList(hdus)
 
 
