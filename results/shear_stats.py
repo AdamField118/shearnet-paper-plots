@@ -45,13 +45,21 @@ THE SHAPES
 ----------
 Both estimators are calibrated the same way, each on its own measurements:
 the shape is ``g_noshear`` -- the estimator on metacal's reconvolved noshear
-image -- with the population PSF correction ``<e> - <R^PSF><e^PSF>``
-(``e^PSF`` is ``STAMP.psf_g``), divided by the estimator's own
-``R^gamma + R^S``. Every mean is corrected, the ones inside ``R^S`` included.
+image -- divided by the estimator's own ``R^gamma + R^S``.
+
+The population PSF correction ``<e> - <R^PSF><e^PSF>`` (``e^PSF`` is
+``STAMP.psf_g``) is applied where ``PSF_CORRECTED`` says: always for ngmix,
+whose leakage it is there to remove, and not for ShearNet, which is trained to
+be PSF-insensitive and so need not apply it. Where it is applied, every mean is
+corrected, the ones inside ``R^S`` included. :func:`shear_bias` can compute
+either choice, so the bias figure's JSON records both for each estimator: the
+correction must improve ngmix (if it does not, something is wrong), and it shows
+what it would do to ShearNet.
 
 The shape has to be the noshear one: ``R^gamma`` and ``R^PSF`` are measured on
 the reconvolved products, so they describe the estimator on reconvolved images
-(dilated PSF, twice the noise variance, correlated noise). ShearNet's ``g_original`` responds
+(dilated PSF, twice the noise variance, correlated noise). ShearNet's
+``g_original`` responds
 to shear ~2% more than that (UT1: 0.9955 against R = 0.9766), and dividing it
 by the metacal R left m1 = +0.019.
 
@@ -84,7 +92,7 @@ G1_PAIR = ("g1_plus", "g1_minus")
 #: Which column is "the shape" of each estimator, and whether the population
 #: PSF correction applies to it (see THE SHAPES).
 SHAPE_VARIANT = {"shearnet": "noshear", "ngmix": "noshear"}
-PSF_CORRECTED = {"shearnet": True, "ngmix": True}
+PSF_CORRECTED = {"shearnet": False, "ngmix": True}
 TABLE = {"shearnet": "SHEARNET", "ngmix": "NGMIX"}
 
 DEFAULT_NJACK = 20
@@ -284,7 +292,7 @@ def _calibrated(t: dict, step: float, psf_corrected: bool) -> dict:
 
     RS = np.zeros_like(Rg)
     for j, (plus, minus) in enumerate((("1p", "1m"), ("2p", "2m"))):
-        # R^S of the shape actually reported: for ngmix the R^PSF-corrected one
+        # R^S of the shape actually reported: R^PSF-corrected where it is
         mean_p = corrected(t[f"e_{plus}"], t[f"gpsf_{plus}"], t[f"n_{plus}"])
         mean_m = corrected(t[f"e_{minus}"], t[f"gpsf_{minus}"], t[f"n_{minus}"])
         RS[:, :, j] = (mean_p - mean_m) / (2.0 * step)
@@ -310,13 +318,16 @@ def responses(sample: Sample, est: str, njack: int = DEFAULT_NJACK,
 
 
 def shear_bias(sample: Sample, est: str, njack: int = DEFAULT_NJACK,
-               pair: Sequence[str] = G1_PAIR, component: int = 0) -> dict:
+               pair: Sequence[str] = G1_PAIR, component: int = 0,
+               psf_corrected: Optional[bool] = None) -> dict:
     """Equation 3 on the selected sample, with ``R_i = <R^gamma_ii> + R^S_ii``.
 
     ``component`` is the sheared one (0 for the g1 pair): ``m`` is measured along
-    it and ``c`` on the other component. Returns ``{"m": (value, err),
-    "c": (value, err), ...}``.
+    it and ``c`` on the other component. ``psf_corrected`` overrides
+    ``PSF_CORRECTED[est]``. Returns ``{"m": (value, err), "c": (value, err), ...}``.
     """
+    if psf_corrected is None:
+        psf_corrected = PSF_CORRECTED[est]
     p, q = (sample.scene_index(s) for s in pair)
     a, b = component, 1 - component
     key = "g1" if a == 0 else "g2"
@@ -330,7 +341,7 @@ def shear_bias(sample: Sample, est: str, njack: int = DEFAULT_NJACK,
     _population_means(sample, est, blocks)
 
     def fn(t):
-        c = _calibrated(t, sample.step, PSF_CORRECTED[est])
+        c = _calibrated(t, sample.step, psf_corrected)
         e, R, Rg = c["e"], c["R"], c["Rg"]
         return {
             "m": (e[p, a] - e[q, a]) / (half_separation * (R[p, a, a] + R[q, a, a])) - 1.0,
@@ -414,7 +425,7 @@ def calibrated_leakage_inputs(sample: Sample, est: str, scene: str = "zero",
     * every shape is divided by the estimator's own diagonal
       ``R = <R^gamma> + R^S``, measured on the selected records of ``scene``;
     * the shape is ``SHAPE_VARIANT``'s, R^PSF-corrected where
-      ``PSF_CORRECTED`` says (both, in the paper). The correction itself is
+      ``PSF_CORRECTED`` says (ngmix, not ShearNet). The correction itself is
       ``superbit_lensing``'s (``PSFLeakagePanelMaker(correct_psf_leakage=True)``:
       ``e - R^PSF_ii e^PSF_i`` with ``R^PSF_ii`` the mean in each ``e^PSF``
       percentile bin, LITB III Appendix D), so this only sets

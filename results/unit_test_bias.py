@@ -9,8 +9,9 @@ m is component 1 along the applied shear; c is the orthogonal component 2 on
 that same +/-g1 pair (Equation 3). With the default ``--cut metacal`` both
 estimators are measured on the sample that passes ngmix's T/Tpsf > 1 and
 s2n > 10 on the noshear fit, each population selected on its own, and calibrated
-by R = <R^gamma> + R^S (see shear_stats). The JSON written next to the figure
-carries m and c without R^S too, and the selected counts.
+by R = <R^gamma> + R^S (see shear_stats); ngmix is R^PSF-corrected and ShearNet
+is not. The JSON written next to the figure carries m and c without R^S too,
+m and c with the other R^PSF choice (``other_Rpsf``), and the selected counts.
 
 Missing values are NEVER drawn as zero-height bars. --draft explicitly creates
 an empty layout when no results have been supplied.
@@ -43,7 +44,7 @@ def _num(x):
 
 def collect(root, args):
     from catalog import Catalog, find_run
-    from shear_stats import G1_PAIR, Sample, cut_from_name, shear_bias
+    from shear_stats import G1_PAIR, PSF_CORRECTED, Sample, cut_from_name, shear_bias
 
     cut = cut_from_name(args.cut, args.min_t_ratio, args.min_s2n)
     data = {"components": {"m": 1, "c": 2, "applied_shear": 1},
@@ -61,13 +62,21 @@ def collect(root, args):
             row["counts"] = {s: sample.counts()[s] for s in G1_PAIR}
             for est in ESTIMATORS:
                 b = shear_bias(sample, est, njack=args.njack)
+                corrected = PSF_CORRECTED[est]
+                other = shear_bias(sample, est, njack=args.njack,
+                                   psf_corrected=not corrected)
                 row["estimators"][est] = {
                     "m1": _num(b["m"][0]), "m1_err": _num(b["m"][1]),
                     "c2": _num(b["c"][0]), "c2_err": _num(b["c"][1]),
                     "m1_without_RS": _num(b["m_without_RS"][0]),
                     "m1_without_RS_err": _num(b["m_without_RS"][1]),
                     "R11": _num(b["R_aa"][0]), "RS11": _num(b["RS_aa"][0]),
-                    "RS11_err": _num(b["RS_aa"][1]), "n_selected": b["n_selected"]}
+                    "RS11_err": _num(b["RS_aa"][1]), "n_selected": b["n_selected"],
+                    "Rpsf_corrected": corrected,
+                    "other_Rpsf": {
+                        "Rpsf_corrected": not corrected,
+                        "m1": _num(other["m"][0]), "m1_err": _num(other["m"][1]),
+                        "c2": _num(other["c"][0]), "c2_err": _num(other["c"][1])}}
             del sample
             catalog.close()
         data["runs"][name] = row
@@ -88,6 +97,12 @@ def report(data) -> str:
                 f"   c2 = ({v['c2'] * 1e5:+.2f} +/- {v['c2_err'] * 1e5:.2f})e-5"
                 f"   [without R^S: m1 = {v['m1_without_RS'] * 1e3:+.2f}e-3;"
                 f" R^S_11 = {v['RS11']:+.4f}; n = {v['n_selected']}]")
+            o = v.get("other_Rpsf")
+            if o:
+                lines.append(
+                    f"      {'with' if o['Rpsf_corrected'] else 'without'} R^PSF instead:"
+                    f" m1 = ({o['m1'] * 1e3:+.2f} +/- {o['m1_err'] * 1e3:.2f})e-3"
+                    f"   c2 = ({o['c2'] * 1e5:+.2f} +/- {o['c2_err'] * 1e5:.2f})e-5")
     return "\n".join(lines)
 
 

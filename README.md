@@ -202,7 +202,7 @@ measurements only, so every response, cut and bias is formed here.
 | Table 2, `tab:response-diag` | `response_diagnostics.py` | cut |
 | Figure 3, `fig:response_snr` | `response_vs_snr.py` | **never cut** |
 | Figure 4, `fig:unit-test-bias` | `unit_test_bias.py` | cut, `R = <R^gamma> + R^S` |
-| Figure 5, `fig:psf-leakage` | `psf_leakage.py` | cut, ring-complete objects; R^PSF-corrected |
+| Figure 5, `fig:psf-leakage` | `psf_leakage.py` | cut, ring-complete objects; ngmix R^PSF-corrected |
 | `tab:timing` | `timing_table.py` | every observation; cost of the metacal measurement (needs `NGMIX.metacal_image_cpu_seconds`) |
 
 **`catalog.py`** is the only module that knows the file layout; **`shear_stats.py`**
@@ -333,8 +333,12 @@ Figure 3 is never cut, because it is what motivates the cut. Its S/N axis is ngm
 `s2n_noshear`, the quantity the cut is placed on.
 
 **The shapes, and R^PSF.** Both estimators are calibrated the same way: the shape
-is `g_noshear` (the estimator on metacal's noshear image), R^PSF-corrected and
-divided by its own `R = <R^gamma> + R^S`. It has to be the noshear shape, because
+is `g_noshear` (the estimator on metacal's noshear image), divided by its own
+`R = <R^gamma> + R^S`. ngmix is also R^PSF-corrected; ShearNet, trained to be
+PSF-insensitive, need not be and is not (`PSF_CORRECTED` in `shear_stats.py`).
+The bias figure's JSON records each estimator with the other choice too
+(`other_Rpsf`): the correction has to improve ngmix, and it shows what it would
+do to ShearNet. It has to be the noshear shape, because
 `R^gamma` and `R^PSF` describe the estimator on reconvolved images: ShearNet's
 `g_original` responds ~2% more than that, and calibrating it by the metacal R
 left m1 = +0.019 in UT1.

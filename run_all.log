@@ -1,0 +1,80 @@
+fiducial catalog: /home/adfield/weak_lensing/ShearNet/runs/unit_tests/fourth/generation-59340f17f504/merged.fits
+--- what the paper asks for ---
+
+Every paper item is accounted for, and nothing else is produced.
+
+
+=== tab:response-diag ===
+% tab:response-diag from merged.fits (d4_unit_fourth)
+% columns: response & estimator & 11 & 22 & 12 & 21
+% entries are means over the +g1 and -g1 populations and every ring station;
+% errors: delete-one-block jackknife over objects, 20 blocks
+% cut: ngmix T_t/Tpsf_t > 1 and s2n_t > 10 (flags_t == 0) on each metacal product t's own fit; sample = noshear selection; R = <R^gamma> + R^S
+%   g1_plus: 28348 of 799980 records selected (3.5%)
+%   g1_minus: 28331 of 799980 records selected (3.5%)
+% R = R^gamma + R^S, shearnet: R11 = +1.5152 +/- 0.0441, R22 = +1.5177 +/- 0.0428, R12 = -0.0058 +/- 0.0090, R21 = +0.0046 +/- 0.0102
+% R = R^gamma + R^S, ngmix: R11 = +1.4741 +/- 0.0427, R22 = +1.4857 +/- 0.0417, R12 = -0.0085 +/- 0.0089, R21 = +0.0051 +/- 0.0095
+$R^{\gamma}$ & \textsc{shearnet} & $+0.9908 \pm 0.0017$ & $+0.9906 \pm 0.0012$ & $+0.0010 \pm 0.0010$ & $-0.0004 \pm 0.0009$ \\
+$R^{\gamma}$ & \textsc{ngmix} & $+0.9682 \pm 0.0014$ & $+0.9737 \pm 0.0007$ & $-0.0014 \pm 0.0008$ & $+0.0002 \pm 0.0009$ \\
+$R^{\rm S}$ & \textsc{shearnet} & $+0.5244 \pm 0.0443$ & $+0.5270 \pm 0.0427$ & $-0.0068 \pm 0.0090$ & $+0.0051 \pm 0.0099$ \\
+$R^{\rm S}$ & \textsc{ngmix} & $+0.5059 \pm 0.0430$ & $+0.5120 \pm 0.0415$ & $-0.0071 \pm 0.0087$ & $+0.0049 \pm 0.0096$ \\
+$R^{\rm PSF}$ & \textsc{shearnet} & $-0.0780 \pm 0.0009$ & $-0.0534 \pm 0.0007$ & $+0.0012 \pm 0.0003$ & $-0.0003 \pm 0.0002$ \\
+$R^{\rm PSF}$ & \textsc{ngmix} & $+0.0306 \pm 0.0008$ & $+0.0210 \pm 0.0010$ & $+0.0022 \pm 0.0014$ & $+0.0004 \pm 0.0005$ \\
+
+% wrote /home/adfield/weak_lensing/shearnet-paper-plots/output/tab_response_diag.tex
+
+=== fig:response_snr ===
+  shearnet: 199958 objects (uncut), median ngmix S/N 46.7
+  ngmix: 199958 objects (uncut), median ngmix S/N 46.7
+note: TeX cannot render here, so text.usetex is off and the
+      figure uses mathtext. For the paper's fonts:
+      ~/.TinyTeX/bin/*/tlmgr install cm-super type1cm dvipng
+wrote /home/adfield/weak_lensing/shearnet-paper-plots/output/response_vs_snr.pdf
+
+=== fig:psf-leakage ===
+<Catalog merged.fits: run d4_unit_fourth, 199995 objects x 5 scenes x 4 stations>
+cut: ngmix T_t/Tpsf_t > 1 and s2n_t > 10 (flags_t == 0) on each metacal product t's own fit; sample = noshear selection; R = <R^gamma> + R^S
+[WROTE] /tmp/tmp4xzsf0zb/panels_shearnet.fits  (2 extensions)
+  ShearNet-D4 [g_noshear / R, R = (1.5303, 1.5381), 6674 of 199995 objects]: alpha1 = -0.0007 +/- 0.0024, alpha2 = -0.0013 +/- 0.0013
+[WROTE] /tmp/tmp4xzsf0zb/panels_ngmix.fits  (2 extensions)
+  NGmix [(g_noshear - R^PSF e^PSF) / R, R^PSF-corrected, R = (1.4907, 1.5058), 6674 of 199995 objects]: alpha1 = -0.0052 +/- 0.0010, alpha2 = +0.0033 +/- 0.0011
+wrote /home/adfield/weak_lensing/shearnet-paper-plots/output/psf_leakage.pdf
+wrote /home/adfield/weak_lensing/shearnet-paper-plots/output/psf_leakage.png
+
+=== tab:timing ===
+% tab:timing from merged.fits (d4_unit_fourth)
+% columns: step & device & milliseconds per observation
+% means over 3999900 observations; ShearNet on gpu
+% excluded: rendering and JAX compilation; CPU times are one core's
+% ngmix's fits are 29x ShearNet's GPU time on the same products
+metacal products (9) & CPU core & 62.92 \\
+\textsc{ngmix} fits of the products & CPU core & 81.24 \\
+\textsc{ShearNet}-D4 on the products & GPU & 2.84 \\
+\hline
+\textsc{ngmix} total & CPU core & 144.16 \\
+\textsc{ShearNet}-D4 total & CPU core + GPU & 62.92 + 2.84 \\
+Ratio of CPU time & & 2.3$\times$ \\
+
+% wrote /home/adfield/weak_lensing/shearnet-paper-plots/output/tab_timing.tex
+
+=== fig:unit-test-bias ===
+cut: ngmix T_t/Tpsf_t > 1 and s2n_t > 10 (flags_t == 0) on each metacal product t's own fit; sample = noshear selection; R = <R^gamma> + R^S
+  UT1 shearnet m1 = (+0.12 +/- 0.10)e-3   c2 = (+3.76 +/- 3.91)e-5   [without R^S: m1 = +0.11e-3; R^S_11 = -0.0000; n = 1599960]
+      with R^PSF instead: m1 = (+0.12 +/- 0.10)e-3   c2 = (+3.76 +/- 3.91)e-5
+  UT1 ngmix    m1 = (+0.02 +/- 0.15)e-3   c2 = (+3.05 +/- 3.80)e-5   [without R^S: m1 = +0.02e-3; R^S_11 = -0.0000; n = 1599960]
+      without R^PSF instead: m1 = (+0.02 +/- 0.15)e-3   c2 = (+3.05 +/- 3.80)e-5
+  UT2 shearnet m1 = (+20.32 +/- 9.90)e-3   c2 = (+116.83 +/- 15.35)e-5   [without R^S: m1 = +1998.49e-3; R^S_11 = +1.9206; n = 110849]
+      with R^PSF instead: m1 = (+20.60 +/- 9.89)e-3   c2 = (+127.64 +/- 15.24)e-5
+  UT2 ngmix    m1 = (+19.26 +/- 9.69)e-3   c2 = (+116.25 +/- 15.22)e-5   [without R^S: m1 = +1960.60e-3; R^S_11 = +1.8176; n = 110849]
+      without R^PSF instead: m1 = (+20.74 +/- 9.79)e-3   c2 = (+123.14 +/- 15.03)e-5
+  UT3 shearnet m1 = (+4.52 +/- 13.43)e-3   c2 = (+2.38 +/- 42.02)e-5   [without R^S: m1 = +528.88e-3; R^S_11 = +0.4965; n = 56559]
+      with R^PSF instead: m1 = (+3.32 +/- 13.41)e-3   c2 = (+46.20 +/- 40.96)e-5
+  UT3 ngmix    m1 = (+2.72 +/- 12.57)e-3   c2 = (+65.54 +/- 38.87)e-5   [without R^S: m1 = +514.14e-3; R^S_11 = +0.4810; n = 56559]
+      without R^PSF instead: m1 = (+2.60 +/- 12.65)e-3   c2 = (+74.61 +/- 39.03)e-5
+  UT4 shearnet m1 = (+14.59 +/- 14.79)e-3   c2 = (+41.26 +/- 29.05)e-5   [without R^S: m1 = +551.60e-3; R^S_11 = +0.5244; n = 56679]
+      with R^PSF instead: m1 = (+14.09 +/- 14.82)e-3   c2 = (+69.50 +/- 29.56)e-5
+  UT4 ngmix    m1 = (+15.93 +/- 14.63)e-3   c2 = (+93.50 +/- 27.56)e-5   [without R^S: m1 = +546.79e-3; R^S_11 = +0.5059; n = 56679]
+      without R^PSF instead: m1 = (+15.45 +/- 14.33)e-3   c2 = (+104.15 +/- 27.90)e-5
+wrote /home/adfield/weak_lensing/shearnet-paper-plots/output/unit_test_bias.pdf; m uses component 1, c component 2 on the g1 pair
+
+Done. Every deliverable produced. Output in /home/adfield/weak_lensing/shearnet-paper-plots/output

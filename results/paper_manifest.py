@@ -67,7 +67,7 @@ MANIFEST = [
     Item("fig:unit-test-bias", "fits", "results/unit_test_bias.py",
          "m and c vs UT1--UT4, cut sample, R^S included"),
     Item("fig:psf-leakage", "fits", "results/psf_leakage.py",
-         "calibrated noshear shapes, R^PSF-corrected, cut sample"),
+         "calibrated noshear shapes, ngmix R^PSF-corrected, cut sample"),
     Item("tab:unit-tests", "static", None, "simulation definitions"),
     Item("tab:response-diag", "fits", "results/response_diagnostics.py",
          "mean R^gamma, R^S, R^PSF on the cut sample"),
@@ -91,6 +91,7 @@ NOT_DELIVERABLES = {
     "results/test_paper_colors.py": "color tests",
     "tools/reproduce_advisor_figures.py": "checked archival replay of supplied figures",
     "tools/recolor_paper5.py": "archival recolor of a supplied figure",
+    "tools/flux_snr_check.py": "depth check: ngmix flux, magnitude and S/N on UT4",
 
     "results/catalog.py": "library: the shearnet-eval catalog reader",
     "results/shear_stats.py": "library: the cut, R^gamma, R^S, R^PSF, m, c",

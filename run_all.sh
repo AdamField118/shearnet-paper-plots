@@ -19,8 +19,8 @@
 # cut off everywhere else too.
 #
 # THE SHAPES. Both estimators are calibrated the same way: their metacal noshear
-# shape, with metacal's PSF response removed, divided by their own
-# R = <R^gamma> + R^S.
+# shape divided by their own R = <R^gamma> + R^S. ngmix's also has metacal's PSF
+# response removed; ShearNet's does not need it and does not.
 
 set -euo pipefail
 

@@ -22,8 +22,9 @@ By default (``--shape calibrated``) each estimator is shown on the shape its m
 and c are calibrated from, ring-averaged over the four stations of the
 **unsheared** population (scene ``zero``):
 
-``g_noshear`` (metacal), **R^PSF-corrected** and divided by the estimator's
-own ``R = <R^gamma> + R^S``. The R^PSF correction is ``superbit_lensing``'s own
+``g_noshear`` (metacal) divided by the estimator's own ``R = <R^gamma> + R^S``;
+ngmix's is also **R^PSF-corrected**, ShearNet's is not (``shear_stats``,
+THE SHAPES). The R^PSF correction is ``superbit_lensing``'s own
 (``PSFLeakagePanelMaker(correct_psf_leakage=True)``: ``R^PSF`` per ``e^PSF``
 percentile bin, LITB III Appendix D).
 

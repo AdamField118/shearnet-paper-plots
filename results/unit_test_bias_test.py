@@ -52,3 +52,27 @@ def test_collect_uses_the_shear_stats_estimator(tmp_path):
         np.testing.assert_allclose(result[est]["c2"], expected["c"][0])
         np.testing.assert_allclose(result[est]["c2_err"], expected["c"][1])
         assert result[est]["m1"] != result[est]["m1_without_RS"]
+
+
+def test_collect_records_the_other_rpsf_choice(tmp_path):
+    """ngmix is R^PSF-corrected and ShearNet is not; each also carries the other
+    choice, so the correction's effect on both is in the JSON."""
+    from argparse import Namespace
+    from catalog import Catalog
+    from make_fixture import build
+    from shear_stats import G1_PAIR, PAPER_CUT, Sample, shear_bias
+    from unit_test_bias import collect, report
+    path = tmp_path/"first.fits"
+    build(2000, seed=5).writeto(path)
+    args = Namespace(cut="metacal", min_t_ratio=None, min_s2n=None, njack=20)
+    data = collect(tmp_path, args)
+    sample = Sample(Catalog(path), list(G1_PAIR), cut=PAPER_CUT)
+    for est, corrected in (("shearnet", False), ("ngmix", True)):
+        row = data["runs"]["first"]["estimators"][est]
+        assert row["Rpsf_corrected"] is corrected
+        assert row["other_Rpsf"]["Rpsf_corrected"] is (not corrected)
+        expected = shear_bias(sample, est, psf_corrected=not corrected)
+        np.testing.assert_allclose(row["other_Rpsf"]["c2"], expected["c"][0])
+        np.testing.assert_allclose(row["other_Rpsf"]["m1"], expected["m"][0])
+    text = report(data)
+    assert "with R^PSF instead" in text and "without R^PSF instead" in text
