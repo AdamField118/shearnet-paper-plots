@@ -214,9 +214,14 @@ with the fitted leakage slope α per estimator. The binning, the jackknife α/β
 the R^PSF correction and the drawing are `superbit_lensing`'s
 (`PSFLeakagePanelMaker`, `save_all_panels_to_fits`, `plot_psf_leakage_comparison`);
 this script only selects the objects and columns, ring-averaged over the unsheared
-population: each estimator's `g_noshear` with `correct_psf_leakage=True`,
-divided by its own `R = <R^gamma> + R^S`.
+population: each estimator's `g_noshear` divided by its own `R = <R^gamma> + R^S`,
+with `correct_psf_leakage=True` for ngmix only. `--rpsf on` / `--rpsf off`
+R^PSF-correct both estimators or neither (the legend then says which).
 `--shape raw` draws the uncorrected `g_original` of both instead.
+
+**`response_vs_snr.py`** bins in S/N quantiles: it prints each bin's edges,
+centre and object count and writes them to `*.bins.txt` next to the figure;
+`--annotate-counts` also writes the counts on the figure.
 
 **`make_fixture.py`** writes a small catalog in the real schema with *known injected
 answers* — responses, PSF leakage, and an S/N that depends on the measured shape so

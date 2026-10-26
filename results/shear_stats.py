@@ -301,15 +301,18 @@ def _calibrated(t: dict, step: float, psf_corrected: bool) -> dict:
 
 
 def responses(sample: Sample, est: str, njack: int = DEFAULT_NJACK,
-              pair: Sequence[str] = G1_PAIR) -> dict:
+              pair: Sequence[str] = G1_PAIR, psf_corrected: Optional[bool] = None) -> dict:
     """Table 2: ``<R^gamma>``, ``R^S``, ``R = <R^gamma> + R^S`` and ``<R^PSF>``,
-    each the mean of the two populations of ``pair``, with jackknife errors."""
+    each the mean of the two populations of ``pair``, with jackknife errors.
+    ``psf_corrected`` overrides ``PSF_CORRECTED[est]`` (it changes ``R^S``)."""
+    if psf_corrected is None:
+        psf_corrected = PSF_CORRECTED[est]
     p, q = (sample.scene_index(s) for s in pair)
     blocks = _Blocks(sample.cat.n_objects, njack)
     _population_means(sample, est, blocks)
 
     def fn(t):
-        c = _calibrated(t, sample.step, PSF_CORRECTED[est])
+        c = _calibrated(t, sample.step, psf_corrected)
         return {key: 0.5 * (c[key][p] + c[key][q]) for key in ("Rg", "RS", "R", "Rp")}
 
     out = blocks.estimate(fn)
@@ -419,7 +422,8 @@ LEAKAGE_VARIANT = SHAPE_VARIANT
 
 
 def calibrated_leakage_inputs(sample: Sample, est: str, scene: str = "zero",
-                              njack: int = DEFAULT_NJACK) -> dict:
+                              njack: int = DEFAULT_NJACK,
+                              psf_corrected: Optional[bool] = None) -> dict:
     """Figure 5's input, calibrated the way m and c are.
 
     * every shape is divided by the estimator's own diagonal
@@ -431,16 +435,22 @@ def calibrated_leakage_inputs(sample: Sample, est: str, scene: str = "zero",
       percentile bin, LITB III Appendix D), so this only sets
       ``correct_psf_leakage`` and hands over ``R^PSF / R`` -- which makes the
       result ``(e - R^PSF e^PSF) / R``, LITB III Eq. 24's order.
+
+    ``psf_corrected`` overrides ``PSF_CORRECTED[est]``, for figures that show
+    both choices.
     """
+    if psf_corrected is None:
+        psf_corrected = PSF_CORRECTED[est]
     data = leakage_inputs(sample, est, scene=scene, variant=LEAKAGE_VARIANT[est])
-    R = responses(sample, est, njack=njack, pair=(scene, scene))["R"][0]
+    R = responses(sample, est, njack=njack, pair=(scene, scene),
+                  psf_corrected=psf_corrected)["R"][0]
     r1, r2 = float(R[0, 0]), float(R[1, 1])
     data["e1_gal"] = data["e1_gal"] / r1
     data["e2_gal"] = data["e2_gal"] / r2
     data["r11_psf"] = data["r11_psf"] / r1
     data["r22_psf"] = data["r22_psf"] / r2
-    data["correct_psf_leakage"] = bool(PSF_CORRECTED[est])
+    data["correct_psf_leakage"] = bool(psf_corrected)
     data["R"] = (r1, r2)
-    data["shape"] = (f"(g_{LEAKAGE_VARIANT[est]} - R^PSF e^PSF) / R" if PSF_CORRECTED[est]
+    data["shape"] = (f"(g_{LEAKAGE_VARIANT[est]} - R^PSF e^PSF) / R" if psf_corrected
                      else f"g_{LEAKAGE_VARIANT[est]} / R")
     return data

@@ -28,6 +28,10 @@ THE SHAPES). The R^PSF correction is ``superbit_lensing``'s own
 (``PSFLeakagePanelMaker(correct_psf_leakage=True)``: ``R^PSF`` per ``e^PSF``
 percentile bin, LITB III Appendix D).
 
+``--rpsf on`` / ``--rpsf off`` R^PSF-correct both estimators or neither,
+instead of the paper's choice (``--rpsf paper``: ngmix only); the labels then
+say which.
+
 ``--shape raw`` restores the previous figure: both on ``g_original``, no
 response division, no R^PSF.
 
@@ -156,6 +160,9 @@ def main(argv=None):
     p.add_argument("--cut", choices=("metacal", "none"), default="metacal")
     p.add_argument("--min-t-ratio", type=float, default=None)
     p.add_argument("--min-s2n", type=float, default=None)
+    p.add_argument("--rpsf", choices=("paper", "on", "off"), default="paper",
+                   help="R^PSF correction of the calibrated shapes: paper (default; "
+                        "ngmix only), on (both estimators) or off (neither)")
     p.add_argument("--shape", choices=SHAPES, default="calibrated",
                    help="calibrated (default): noshear - R^PSF e^PSF over R. "
                         "raw: g_original, uncorrected.")
@@ -186,10 +193,12 @@ def main(argv=None):
     panel_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        panel_files = []
+        panel_files, labels = [], []
         for estimator in chosen:
             if args.shape == "calibrated":
-                data = calibrated_leakage_inputs(sample, estimator, scene="zero")
+                override = None if args.rpsf == "paper" else args.rpsf == "on"
+                data = calibrated_leakage_inputs(sample, estimator, scene="zero",
+                                                 psf_corrected=override)
             else:
                 data = leakage_inputs(sample, estimator, scene="zero", variant="original")
                 data.update(correct_psf_leakage=False, shape="original, uncorrected")
@@ -205,6 +214,11 @@ def main(argv=None):
                   f"alpha1 = {a1:+.4f} +/- {a1e:.4f}, "
                   f"alpha2 = {a2:+.4f} +/- {a2e:.4f}")
             panel_files.append(out_fits)
+            label = DISPLAY_NAME.get(estimator, estimator)
+            if args.rpsf != "paper":  # the paper figure keeps its plain names
+                label += (r" ($R^{\rm PSF}$-corrected)" if data["correct_psf_leakage"]
+                          else r" (no $R^{\rm PSF}$)")
+            labels.append(label)
 
         stem = Path(args.out) if args.out else (
             Path(__file__).resolve().parent.parent / "figures" / "psf_leakage"
@@ -213,8 +227,8 @@ def main(argv=None):
 
         plot_psf_leakage_comparison(
             str(panel_files[0]), str(panel_files[1]),
-            label_nfw=DISPLAY_NAME.get(chosen[0], chosen[0]),
-            label_nonfw=DISPLAY_NAME.get(chosen[1], chosen[1]),
+            label_nfw=labels[0],
+            label_nonfw=labels[1],
             components=(1, 2),
             save_path=None,
         )

@@ -301,6 +301,46 @@ def test_figure_5_turns_the_upstream_correction_on_for_ngmix_only(tmp_path, monk
         np.testing.assert_allclose(kwargs["e1_gal"], e / r)
 
 
+@pytest.mark.parametrize("rpsf, expected", [("on", True), ("off", False)])
+def test_figure_5_rpsf_switch_sets_both_estimators(tmp_path, monkeypatch, rpsf, expected):
+    """--rpsf on/off overrides the paper's per-estimator choice for both, and
+    the legend says which; the R each shape is divided by follows the choice."""
+    import matplotlib.pyplot as plt
+
+    import psf_leakage
+
+    path = tmp_path / "second.fits"
+    build(3000, seed=9).writeto(path)
+    seen, legend = {}, {}
+
+    class FakeMaker:
+        def __init__(self, **kwargs):
+            seen[len(seen)] = kwargs
+
+        def make_panel(self, ax, x_psf, xlab, return_data):
+            return {f"alpha_full_{k}": 0.0 for k in (1, 2)} | {
+                f"alpha_err_{k}": 1.0 for k in (1, 2)}
+
+    def fake_compare(*args, **kwargs):
+        legend.update(kwargs)
+        plt.subplots(1, 2)
+
+    monkeypatch.setattr(psf_leakage, "_import_superbit",
+                        lambda: (FakeMaker, lambda *a, **k: None, fake_compare))
+    psf_leakage.main(["--fits", str(path), "--out", str(tmp_path / "leak"),
+                      "--format", "png", "--rpsf", rpsf])
+    assert [seen[i]["correct_psf_leakage"] for i in (0, 1)] == [expected, expected]
+    tag = "-corrected" if expected else "no $R^{\\rm PSF}$"
+    assert tag in legend["label_nfw"] and tag in legend["label_nonfw"]
+    sample = Sample(Catalog(path), ["zero"])
+    keep = sample.select["noshear"][0].all(axis=0)
+    for i, est in enumerate(("shearnet", "ngmix")):
+        e = sample.g[est]["noshear"][0][:, keep].mean(axis=0)[:, 0]
+        r = responses(sample, est, pair=("zero", "zero"),
+                      psf_corrected=expected)["R"][0][0, 0]
+        np.testing.assert_allclose(seen[i]["e1_gal"], e / r)
+
+
 def test_ngmix_selection_response_is_measured_on_the_rpsf_corrected_shape(cat, monkeypatch):
     """R^S differences the mean shape over the 1p/1m selections; for ngmix that
     shape is R^PSF-corrected, so R^S moves by <R^PSF> (<e^PSF>_1p - <e^PSF>_1m) / 2 step."""

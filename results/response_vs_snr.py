@@ -59,6 +59,15 @@ the threshold. ``--snr stamp`` uses the stamp S/N instead.
 
     python response_vs_snr.py --fits ../evaluations/fourth.fits
     python response_vs_snr.py --fits ../evaluations/fourth.fits --nbins 15
+
+THE BINS
+--------
+They are quantile bins: edges at equal percentiles of S/N, so each holds the
+same number of objects. The script prints every bin's edges, centre (the median
+S/N, the point's x) and object count, and writes them next to the figure
+(``*.bins.txt``); ``--annotate-counts`` also writes the counts on the figure.
+The counts come from :func:`bin_table`, which bins exactly as
+:func:`_bin_response` does.
 """
 
 from __future__ import annotations
@@ -101,6 +110,53 @@ def _bin_response(r_arr, snr_arr, n_bins=25):
             meds.append(np.median(r[mask]))
             errs.append(np.std(r[mask]) / np.sqrt(mask.sum()))
     return np.array(centers), np.array(meds), np.array(errs)
+
+
+def bin_table(r_arr, snr_arr, n_bins=25):
+    """``[(lower edge, upper edge, centre, count)]`` of :func:`_bin_response`'s
+    bins, built the same way (same valid set, percentile edges and digitize).
+
+    ``np.digitize`` puts a value equal to the last edge past the last bin, so the
+    single highest-S/N object is in no bin; ``excluded`` counts it.
+    """
+    valid = np.isfinite(r_arr) & np.isfinite(snr_arr) & (snr_arr > 0)
+    s = snr_arr[valid]
+    edges = np.percentile(s, np.linspace(0, 100, n_bins + 1))
+    idx = np.digitize(s, edges)
+    rows = []
+    for i in range(1, len(edges)):
+        mask = idx == i
+        if mask.sum() > 0:
+            rows.append((edges[i - 1], edges[i], float(np.median(s[mask])), int(mask.sum())))
+    return rows, int((idx == len(edges)).sum())
+
+
+def format_bin_table(per_object, estimators, nbins):
+    """The bins of every estimator and response, as text; identical tables are
+    printed once."""
+    lines, seen = [], {}
+    for estimator in estimators:
+        arrays = {panel: response_arrays(per_object[estimator], panel)
+                  for panel in ("gamma", "psf")}
+        for panel, entry in (("gamma", "11"), ("gamma", "22"), ("psf", "11"), ("psf", "22")):
+            if arrays[panel] is None:
+                continue
+            s2n, components = arrays[panel]
+            rows, excluded = bin_table(components[entry], s2n, nbins)
+            name = f"{estimator} R^{panel}_{entry}"
+            key = (tuple(rows), excluded)
+            if key in seen:
+                lines.append(f"{name}: same bins as {seen[key]}")
+                continue
+            seen[key] = name
+            counts = [n for *_, n in rows]
+            lines.append(f"{name}: {sum(counts)} objects in {len(rows)} quantile bins "
+                         f"(counts {min(counts)}-{max(counts)}; {excluded} above the "
+                         "last edge)")
+            lines.append("   bin     S/N from       to   centre    count")
+            for i, (lo, hi, centre, n) in enumerate(rows, 1):
+                lines.append(f"  {i:4d} {lo:12.2f} {hi:8.2f} {centre:8.2f} {n:8d}")
+    return "\n".join(lines)
 
 
 def _as_sorted(x, y, e):
@@ -161,7 +217,7 @@ def response_arrays(per_object, panel):
     return per_object["s2n"], per_object[panel]
 
 
-def draw(per_object, estimators, *, nbins, out_path, xlabel="SNR"):
+def draw(per_object, estimators, *, nbins, out_path, xlabel="SNR", annotate_counts=False):
     from superbit_lensing.plotter import pub_rc
 
     import matplotlib.pyplot as plt
@@ -234,6 +290,14 @@ def draw(per_object, estimators, *, nbins, out_path, xlabel="SNR"):
             ax.set_xlabel(xlabel)
             ax.set_ylabel(ylabel)
             ax.set_title(title, fontsize=12)
+            if annotate_counts:
+                # one estimator is enough: every estimator is binned on the same S/N
+                arrays = response_arrays(per_object[estimators[0]], panel)
+                rows, _ = bin_table(arrays[1]["11"], arrays[0], nbins)
+                for _, _, centre, n in rows:
+                    ax.annotate(str(n), (centre, 0.0), xycoords=("data", "axes fraction"),
+                                xytext=(0, 2), textcoords="offset points", rotation=90,
+                                ha="center", va="bottom", fontsize=6, color="0.35")
             if panel == "gamma":
                 fig.legend(*ax.get_legend_handles_labels(), frameon=False, fontsize=10,
                            loc="outside upper center", ncol=5)
@@ -254,6 +318,8 @@ def main(argv=None) -> int:
                         help="ngmix (default): ngmix s2n_noshear, the cut variable. "
                              "stamp: sqrt(sum I^2)/sigma of the noisy stamp.")
     parser.add_argument("--out", type=Path, default=Path("response_vs_snr.pdf"))
+    parser.add_argument("--annotate-counts", action="store_true",
+                        help="write each bin's object count on the figure")
     args = parser.parse_args(argv)
 
     try:
@@ -280,8 +346,14 @@ def main(argv=None) -> int:
         print(f"  {est}: {d['n_objects']} objects (uncut), median {args.snr} S/N "
               f"{np.median(d['s2n']):.1f}")
 
-    path = draw(per_object, args.estimators, nbins=args.nbins, out_path=args.out)
+    table = format_bin_table(per_object, args.estimators, args.nbins)
+    print(table)
+    path = draw(per_object, args.estimators, nbins=args.nbins, out_path=args.out,
+                annotate_counts=args.annotate_counts)
     print(f"wrote {path}")
+    bins_path = path.with_suffix(".bins.txt")
+    bins_path.write_text(table + "\n")
+    print(f"wrote {bins_path}")
     return 0
 
 

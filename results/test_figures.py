@@ -41,6 +41,24 @@ def test_bins_hold_equal_counts_not_equal_widths():
     assert np.all(np.diff(centres) > 0)
 
 
+def test_bin_table_matches_the_plotted_bins_and_has_equal_counts():
+    """What is shown to prove the bins are quantile bins must be the bins the
+    figure uses: same centres, equal counts (all but the top object)."""
+    from response_vs_snr import bin_table
+
+    rng = np.random.default_rng(2)
+    s2n = rng.lognormal(3.0, 0.8, 25_001)
+    response = rng.normal(0.9, 0.3, s2n.size)
+    rows, excluded = bin_table(response, s2n, n_bins=25)
+    centres, _, _ = _bin_response(response, s2n, n_bins=25)
+    np.testing.assert_allclose([c for _, _, c, _ in rows], centres)
+    counts = [n for *_, n in rows]
+    assert len(rows) == 25 and excluded == 1
+    assert sum(counts) + excluded == s2n.size
+    assert set(counts) == {1000}
+    assert all(lo < c < hi for lo, hi, c, _ in rows)
+
+
 def test_nonpositive_and_nonfinite_are_dropped_before_binning():
     """S/N <= 0 would break the log axis; NaN responses would poison a median."""
     s2n = np.array([-1.0, 0.0, 1.0, 2.0, 3.0, 4.0])
