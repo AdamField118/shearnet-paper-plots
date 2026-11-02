@@ -203,7 +203,7 @@ measurements only, so every response, cut and bias is formed here.
 | Figure 3, `fig:response_snr` | `response_vs_snr.py` | **never cut** |
 | Figure 4, `fig:unit-test-bias` | `unit_test_bias.py` | cut, `R = <R^gamma> + R^S` |
 | Figure 5, `fig:psf-leakage` | `psf_leakage.py` | cut, ring-complete objects; ngmix R^PSF-corrected |
-| `tab:timing` | `timing_table.py` | every observation; cost of the metacal measurement (needs `NGMIX.metacal_image_cpu_seconds`) |
+| `tab:timing` | `timing_table.py` | every observation; one stamp's inference and the metacal stamps' cost apart, then totals on a Perlmutter CPU node / one A100 with and without the stamps |
 
 **`catalog.py`** is the only module that knows the file layout; **`shear_stats.py`**
 is the only one that forms a statistic. See "The cut, the shapes and the errors"

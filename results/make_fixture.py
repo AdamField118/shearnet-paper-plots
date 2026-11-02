@@ -46,9 +46,15 @@ TRUTH = {
                  "noise": 0.03},
     "kappa": 2.0,          # S/N's dependence on ngmix's measured g1
     "Tpsf": 0.1,
-    # CPU seconds per observation: making the nine metacal products, and all of
-    # ngmix's metacal (products and fits); GPU seconds per ShearNet image
-    "timing": {"images": 0.09, "metacal": 0.6, "shearnet_image": 2e-5},
+    # CPU seconds per observation: making the nine metacal products, all of
+    # ngmix's metacal (products and fits), the PSF fits of it this run made
+    # (shared) and would make unshared, and the same three for the fit of the
+    # original stamp; GPU seconds per ShearNet image, alone (the benchmark) and
+    # in the evaluation (with host-device copies)
+    "timing": {"images": 0.09, "metacal": 0.6, "metacal_psf": 0.03,
+               "metacal_psf_uncached": 0.12, "fit": 0.05, "fit_psf": 0.01,
+               "fit_psf_uncached": 0.02, "shearnet_image": 2e-5,
+               "shearnet_pipeline_image": 3e-4},
 }
 
 
@@ -119,6 +125,11 @@ def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HD
             jitter = rng.uniform(-0.01, 0.01, rows)  # mean zero over the rows
             cols["metacal_cpu_seconds"] = TRUTH["timing"]["metacal"] + jitter - jitter.mean()
             cols["metacal_image_cpu_seconds"] = np.full(rows, TRUTH["timing"]["images"])
+            for stage in ("fit", "metacal"):
+                for part in ("psf", "psf_uncached"):
+                    cols[f"{stage}_{part}_cpu_seconds"] = np.full(
+                        rows, TRUTH["timing"][f"{stage}_{part}"])
+            cols["fit_cpu_seconds"] = np.full(rows, TRUTH["timing"]["fit"])
         tables[table] = cols
 
     primary = fits.PrimaryHDU()
@@ -143,9 +154,14 @@ def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HD
         name="ROTATIONS"))
     timing = {"shearnet.device": "gpu", "shearnet.shearnet_images": str(10 * rows),
               "shearnet.shearnet_inference_seconds":
-              repr(10 * rows * TRUTH["timing"]["shearnet_image"])}
+              repr(10 * rows * TRUTH["timing"]["shearnet_pipeline_image"]),
+              "shearnet.shearnet_benchmark_best_seconds_per_stamp":
+              repr(TRUTH["timing"]["shearnet_image"]),
+              "shearnet.shearnet_benchmark_best_batch_size": "4096",
+              "shearnet.device_kind": "NVIDIA A100-SXM4-80GB",
+              "ngmix.cpu_model": "AMD EPYC 7763 64-Core Processor", "ngmix.cpus": "128"}
     hdus.append(fits.BinTableHDU.from_columns([
-        fits.Column(name="key", array=np.array(list(timing)), format="40A"),
+        fits.Column(name="key", array=np.array(list(timing)), format="64A"),
         fits.Column(name="value", array=np.array(list(timing.values())), format="40A")],
         name="TIMING"))
     return fits.HDUList(hdus)

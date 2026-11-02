@@ -155,19 +155,34 @@ def test_the_x_axis_is_log_with_one_two_five_ticks():
 # tab:timing
 # --------------------------------------------------------------------------
 
-def test_timing_table_splits_the_metacal_cost(tmp_path):
+def test_timing_table_separates_inference_from_the_metacal_stamps(tmp_path):
     from catalog import Catalog
     from make_fixture import TRUTH, build
-    from timing_table import PRODUCTS, main, measure
+    from timing_table import CPU_NODE_CORES, GPU_SLICE_CORES, PRODUCTS, main, measure
 
     path = tmp_path / "fourth.fits"
     build(200, seed=1).writeto(path)
     t = measure(Catalog(path))
-    injected = TRUTH["timing"]
-    assert t["images_cpu"] == pytest.approx(injected["images"])
-    assert t["ngmix_cpu"] == pytest.approx(injected["metacal"] - injected["images"])
-    assert t["shearnet_gpu"] == pytest.approx(PRODUCTS * injected["shearnet_image"])
-    assert t["device"] == "gpu"
+    x = TRUTH["timing"]
+    n = t["observations"]
+    # per stamp: ShearNet's GPU time; ngmix's fit with its own PSF fit, unshared
+    assert t["shearnet_stamp"] == pytest.approx(x["shearnet_image"])
+    assert t["ngmix_stamp"] == pytest.approx(x["fit"] - x["fit_psf"] + x["fit_psf_uncached"])
+    assert t["images"] == pytest.approx(x["images"])
+    ngmix_products = x["metacal"] - x["images"] - x["metacal_psf"] + x["metacal_psf_uncached"]
+    assert t["ngmix_products"] == pytest.approx(ngmix_products)
+    # totals in hours on the NERSC-sized hardware
+    assert t["ngmix_fits_h"] == pytest.approx(n * ngmix_products / CPU_NODE_CORES / 3600)
+    assert t["ngmix_total_h"] == pytest.approx(
+        n * (x["images"] + ngmix_products) / CPU_NODE_CORES / 3600)
+    assert t["shearnet_fits_h"] == pytest.approx(n * PRODUCTS * x["shearnet_image"] / 3600)
+    # the stamps on 16 cores take longer than the GPU here, so they set the pace
+    assert t["shearnet_total_h"] == pytest.approx(n * x["images"] / GPU_SLICE_CORES / 3600)
+    # the benchmark, not the evaluation's time with copies, is the inference
+    assert t["pipeline_stamp"] == pytest.approx(x["shearnet_pipeline_image"])
+    assert t["gpu"] == "NVIDIA A100-SXM4-80GB" and t["ngmix_cores"] == 128
     out = tmp_path / "tab_timing.tex"
     assert main(["--fits", str(path), "--out", str(out)]) == 0
-    assert "Ratio of CPU time & & 6.7$\\times$" in out.read_text()
+    text = out.read_text()
+    assert "\\textsc{ngmix} fit & 1 CPU core & 60 ms" in text
+    assert "making them (both estimators) & 1 CPU core & 90 ms" in text

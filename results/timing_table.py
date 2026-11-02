@@ -1,21 +1,38 @@
-"""tab:timing -- what one shear measurement costs each estimator.
+"""tab:timing -- what measuring shear costs each estimator, split into its parts.
 
 Both estimators are calibrated by metacal (:mod:`shear_stats`, THE SHAPES), so
 both need metacal's nine reconvolved products of every observation (noshear,
 the four sheared ones for R^gamma and R^S, the four PSF-sheared ones for
-R^PSF). They differ only in what measures those products:
+R^PSF). The table keeps apart the two costs that this mixes:
 
-* making the nine products, on a CPU core: ``NGMIX.metacal_image_cpu_seconds``;
-* ngmix fitting them, PSF fits included, on a CPU core:
-  ``NGMIX.metacal_cpu_seconds`` minus the products' cost;
-* ShearNet predicting on them, on the GPU: the catalog's ``TIMING``
-  ``shearnet_inference_seconds / shearnet_images``, times nine.
+* **inference on one galaxy stamp** (with its PSF stamp):
+  ShearNet on the GPU, the ShearNet job's benchmark
+  (``TIMING`` ``shearnet_benchmark_best_seconds_per_stamp``: the network alone
+  on stamps already on the device, compiled and warmed up, every pass waited
+  for, at its fastest batch size); ngmix on one CPU core, its fit of the
+  original stamp, ``NGMIX.fit_cpu_seconds`` (size guess, PSF fit and galaxy
+  fit). The evaluation's own ShearNet time, which also copies every batch of
+  stamps to the GPU, is printed alongside;
+* **making the metacal stamps**, the same for both, on one CPU core:
+  ``NGMIX.metacal_image_cpu_seconds`` (all nine products of one observation).
 
-Every number is per observation, averaged over every observation of the
-catalog. Rendering the simulation and compiling the network are excluded. The
-CPU seconds are one core's; ngmix's PSF fits are shared between the
-observations of a galaxy, as a survey pipeline would share them, and counted
-where they ran.
+and then the totals for every observation of the catalog -- nine stamps each --
+with and without the metacal stamps, on NERSC Perlmutter-sized hardware:
+ngmix on one CPU node (``CPU_NODE_CORES`` cores), ShearNet on one A100 with its
+share of a GPU node (``GPU_SLICE_CORES`` cores, which make its metacal
+stamps). The totals are the measured per-stamp costs times the work, divided
+over the hardware, assuming it is kept busy; the jobs' own run times are longer,
+since they also simulated every image. ngmix's fits on the nine products are
+``metacal_cpu_seconds`` minus the stamps' cost.
+
+PSF fits: the evaluation fitted each distinct PSF stamp of a galaxy once and
+shared it between that galaxy's observations, which a survey would not see.
+Every ngmix time here therefore counts the PSF fit of every stamp
+(``*_psf_uncached_cpu_seconds`` in place of the shared ``*_psf_cpu_seconds``),
+as ngmix's ``MetacalBootstrapper`` fits it -- the same footing as ShearNet,
+which reads every PSF stamp.
+
+Rendering the simulation and compiling the network are excluded.
 
     python timing_table.py --fits ../evaluations/fourth.fits --out ../output/tab_timing.tex
 """
@@ -31,31 +48,70 @@ from catalog import Catalog
 
 #: metacal products each measurement needs
 PRODUCTS = 9
+#: one NERSC Perlmutter CPU node
+CPU_NODE_CORES = 128
+#: the CPU cores of a Perlmutter GPU node that go with one of its four A100s
+GPU_SLICE_CORES = 16
+
+COLUMNS = ["fit_cpu_seconds", "fit_psf_cpu_seconds", "fit_psf_uncached_cpu_seconds",
+           "metacal_cpu_seconds", "metacal_image_cpu_seconds", "metacal_psf_cpu_seconds",
+           "metacal_psf_uncached_cpu_seconds"]
 
 
 def measure(catalog: Catalog) -> dict:
+    """Mean seconds per stamp / per observation, and the totals over the catalog."""
     timing = catalog.key_values("TIMING")
-    cols = catalog.columns("NGMIX", ["metacal_cpu_seconds", "metacal_image_cpu_seconds"],
-                           list(catalog.scenes))
-    images = float(np.mean(cols["metacal_image_cpu_seconds"]))
-    fits = float(np.mean(cols["metacal_cpu_seconds"])) - images
-    per_image = timing["shearnet.shearnet_inference_seconds"] / timing["shearnet.shearnet_images"]
-    return {"images_cpu": images, "ngmix_cpu": fits, "shearnet_gpu": PRODUCTS * per_image,
-            "device": timing["shearnet.device"], "observations": int(catalog.header["NRECORD"])}
+    c = {k: float(np.mean(v)) for k, v in
+         catalog.columns("NGMIX", COLUMNS, list(catalog.scenes)).items()}
+    n = int(catalog.header["NRECORD"])
+    shearnet_stamp = timing["shearnet.shearnet_benchmark_best_seconds_per_stamp"]
+    pipeline_stamp = (timing["shearnet.shearnet_inference_seconds"]
+                      / timing["shearnet.shearnet_images"])
+    ngmix_stamp = (c["fit_cpu_seconds"] - c["fit_psf_cpu_seconds"]
+                   + c["fit_psf_uncached_cpu_seconds"])
+    images = c["metacal_image_cpu_seconds"]
+    ngmix_products = (c["metacal_cpu_seconds"] - images - c["metacal_psf_cpu_seconds"]
+                      + c["metacal_psf_uncached_cpu_seconds"])
+    shearnet_products = PRODUCTS * shearnet_stamp
+    hours = 1.0 / 3600.0
+    return {
+        "observations": n, "gpu": timing["shearnet.device_kind"],
+        "cpu": timing["ngmix.cpu_model"], "ngmix_cores": timing["ngmix.cpus"],
+        "batch_size": timing["shearnet.shearnet_benchmark_best_batch_size"],
+        "pipeline_stamp": pipeline_stamp,
+        # per stamp, and the metacal stamps of one observation
+        "shearnet_stamp": shearnet_stamp, "ngmix_stamp": ngmix_stamp,
+        "images": images, "shearnet_products": shearnet_products,
+        "ngmix_products": ngmix_products,
+        # every observation, on the NERSC-sized hardware, in hours
+        "ngmix_fits_h": n * ngmix_products / CPU_NODE_CORES * hours,
+        "ngmix_total_h": n * (images + ngmix_products) / CPU_NODE_CORES * hours,
+        "shearnet_fits_h": n * shearnet_products * hours,
+        # the GPU and its cores work at the same time, so the slower sets the pace
+        "shearnet_images_h": n * images / GPU_SLICE_CORES * hours,
+        "shearnet_total_h": max(n * shearnet_products, n * images / GPU_SLICE_CORES) * hours,
+    }
 
 
 def latex(t: dict) -> list:
-    ms = lambda seconds: f"{1e3 * seconds:.2f}"  # noqa: E731
-    ngmix_total = t["images_cpu"] + t["ngmix_cpu"]
+    ms = lambda seconds: f"{1e3 * seconds:.3g} ms"  # noqa: E731  3 significant figures
+    h = lambda hours: (f"{hours:.3g} h" if hours >= 1  # noqa: E731
+                       else f"{60 * hours:.3g} min")
+    node = f"1 CPU node ({CPU_NODE_CORES} cores)"
+    slice_ = f"1 A100 + {GPU_SLICE_CORES} cores"
+    n = f"{t['observations']:,}".replace(",", "{,}")
     return [
-        rf"metacal products ({PRODUCTS}) & CPU core & {ms(t['images_cpu'])} \\",
-        rf"\textsc{{ngmix}} fits of the products & CPU core & {ms(t['ngmix_cpu'])} \\",
-        rf"\textsc{{ShearNet}}-D4 on the products & GPU & {ms(t['shearnet_gpu'])} \\",
+        r"\multicolumn{3}{l}{\emph{One galaxy stamp (with its PSF stamp)}} \\",
+        rf"\textsc{{ShearNet}}-D4 inference & 1 A100 & {ms(t['shearnet_stamp'])} \\",
+        rf"\textsc{{ngmix}} fit & 1 CPU core & {ms(t['ngmix_stamp'])} \\",
+        rf"\multicolumn{{3}}{{l}}{{\emph{{Metacal stamps of one observation ({PRODUCTS})}}}} \\",
+        rf"making them (both estimators) & 1 CPU core & {ms(t['images'])} \\",
         r"\hline",
-        rf"\textsc{{ngmix}} total & CPU core & {ms(ngmix_total)} \\",
-        rf"\textsc{{ShearNet}}-D4 total & CPU core + GPU & {ms(t['images_cpu'])} + "
-        rf"{ms(t['shearnet_gpu'])} \\",
-        rf"Ratio of CPU time & & {ngmix_total / t['images_cpu']:.1f}$\times$ \\",
+        rf"\multicolumn{{3}}{{l}}{{\emph{{All {n} observations, {PRODUCTS} stamps each}}}} \\",
+        rf"\textsc{{ShearNet}}-D4, inference only & 1 A100 & {h(t['shearnet_fits_h'])} \\",
+        rf"\textsc{{ShearNet}}-D4, with metacal stamps & {slice_} & {h(t['shearnet_total_h'])} \\",
+        rf"\textsc{{ngmix}}, fits only & {node} & {h(t['ngmix_fits_h'])} \\",
+        rf"\textsc{{ngmix}}, with metacal stamps & {node} & {h(t['ngmix_total_h'])} \\",
     ]
 
 
@@ -69,11 +125,20 @@ def main(argv=None) -> int:
     t = measure(catalog)
     lines = [
         f"% tab:timing from {args.fits.name} ({catalog.run_name})",
-        "% columns: step & device & milliseconds per observation",
-        f"% means over {t['observations']} observations; ShearNet on {t['device']}",
-        "% excluded: rendering and JAX compilation; CPU times are one core's",
-        f"% ngmix's fits are {t['ngmix_cpu'] / t['shearnet_gpu']:.0f}x ShearNet's GPU time "
-        "on the same products",
+        "% columns: what & hardware & time",
+        f"% means over {t['observations']} observations; ShearNet on {t['gpu']}, "
+        f"ngmix on {t['ngmix_cores']} cores of {t['cpu']}",
+        "% excluded: rendering and JAX compilation; every ngmix stamp fits its own PSF",
+        f"% ShearNet per stamp: {1e3 * t['shearnet_stamp']:.4f} ms alone at batch size "
+        f"{t['batch_size']}, {1e3 * t['pipeline_stamp']:.4f} ms in the evaluation "
+        "(with host-device copies)",
+        f"% per stamp, ngmix's fit takes {t['ngmix_stamp'] / t['shearnet_stamp']:.0f}x "
+        "ShearNet's inference",
+        f"% inference only: ShearNet on 1 A100 is {t['ngmix_fits_h'] / t['shearnet_fits_h']:.1f}x "
+        f"faster than ngmix on {CPU_NODE_CORES} cores",
+        f"% with metacal stamps: {t['ngmix_total_h'] / t['shearnet_total_h']:.2f}x "
+        f"(ShearNet's {GPU_SLICE_CORES} cores need {t['shearnet_images_h']:.1f} h for the "
+        f"stamps, its GPU {t['shearnet_fits_h']:.1f} h)",
     ] + latex(t)
     text = "\n".join(lines)
     print(text)
