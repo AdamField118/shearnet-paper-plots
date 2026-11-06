@@ -23,8 +23,10 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import LogNorm, Normalize, to_rgba
+from matplotlib.colors import Normalize, to_rgba
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Polygon
+
+from psf_stamp import PSF_CMAP, psf_norm
 
 
 FIGSIZE = (11.0, 5.5)
@@ -185,11 +187,11 @@ def arrow(ax, p0, p1, *, color=C["line"], lw=1.2, rad=0.0, style="-|>", zorder=8
     )
 
 
-def stamp(ax, cx, cy, size, image, *, norm, edge):
+def stamp(ax, cx, cy, size, image, *, norm, edge, cmap="viridis"):
     ax.imshow(
         image,
         extent=(cx - size / 2, cx + size / 2, cy - size / 2, cy + size / 2),
-        cmap="viridis",
+        cmap=cmap,
         norm=norm,
         interpolation="bilinear",
         aspect="auto",
@@ -254,11 +256,11 @@ def attention_icon(ax, cx, cy, size, center, color):
                                facecolor="none", edgecolor=color, linewidth=0.55, zorder=5))
 
 
-def draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_norm):
+def draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_display_norm):
     """Draw the sparse, left-to-right forward path."""
     # Inputs
     stamp(ax, 8.5, 74.0, 10.5, galaxy, norm=gal_norm, edge=C["galaxy"])
-    stamp(ax, 8.5, 58.5, 10.5, psf, norm=psf_norm, edge=C["psf"])
+    stamp(ax, 8.5, 58.5, 10.5, psf, norm=psf_display_norm, edge=C["psf"], cmap=PSF_CMAP)
     ax.text(8.5, 80.8, "galaxy", ha="center", fontsize=FS["body"],
             color=C["galaxy"], fontweight="bold")
     ax.text(8.5, 65.3, "PSF", ha="center", fontsize=FS["body"],
@@ -565,12 +567,7 @@ def build_figure(figsize=FIGSIZE):
     galaxy, psf = load_stamps()
     gal_lo, gal_hi = np.percentile(galaxy, [1.0, 99.7])
     gal_norm = Normalize(vmin=float(gal_lo), vmax=float(gal_hi))
-    positive_psf = psf[psf > 0]
-    if not positive_psf.size:
-        raise ValueError("PSF stamp must contain a positive pixel")
-    psf_norm = LogNorm(vmin=float(np.percentile(positive_psf, 5.0)), vmax=float(psf.max()))
-
-    draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_norm)
+    draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_norm(psf))
     draw_symmetry_note(ax)
     draw_architecture_detail(ax)
     draw_pooling_detail(ax)
@@ -593,13 +590,7 @@ def build_panel(panel):
         galaxy, psf = load_stamps()
         gal_lo, gal_hi = np.percentile(galaxy, [1.0, 99.7])
         gal_norm = Normalize(vmin=float(gal_lo), vmax=float(gal_hi))
-        positive_psf = psf[psf > 0]
-        if not positive_psf.size:
-            raise ValueError("PSF stamp must contain a positive pixel")
-        psf_norm = LogNorm(
-            vmin=float(np.percentile(positive_psf, 5.0)), vmax=float(psf.max())
-        )
-        draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_norm)
+        draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_norm(psf))
     elif panel == "detail3":
         draw_architecture_detail(ax)
     elif panel == "detail4":

@@ -163,6 +163,10 @@ For one figure, for example:
 typst compile --input panel=detail3_network architecture/shearnet.typ network.pdf
 ```
 
+To regenerate the PSF thumbnail from the saved simulation, run
+`python architecture/psf_stamp.py`. Its display floor is zero, with the paper’s
+navy–gray–gold palette and an asinh stretch for the faint wings.
+
 The previous Matplotlib version is in `architecture/shearnet_d4_architecture_4plots.py`.
 
 **`draw_single_stamp.ipynb`** renders **exactly one** galaxy through ShearNet's own
