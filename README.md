@@ -138,23 +138,31 @@ separately at the commits pinned above, so their versions stay explicit decision
 
 ### `architecture/`
 
-**`shearnet_d4_architecture_4plots.py`** draws the flagship D4-equivariant `D4ForkLike`
-model as a dataflow diagram: the joint $D_4$ orbit over the (galaxy, PSF) stamp
-pair, the shared smooth two-branch backbones, cross-attention fusion, realignment
-to the reference frame, and the sign-weighted Reynolds average that produces the
-spin-2 equivariant features feeding the shear head.
+Run `bash architecture/render.sh` with the Typst CLI installed to render the four
+ShearNet diagrams as PDF and 300 ppi PNG in `figures/`. Typst fetches the pinned
+Fletcher package on first use.
+
+| To change | Edit under `architecture/` |
+| --- | --- |
+| Palette, type, strokes, crop, model dimensions, or encoder/head layers | `config.typ` |
+| Which stages appear and their order | `flow` in `config.typ`. Arrows, step numbers, and detail titles follow that order. |
+| A forward stage's width, gap, label, or internal drawing | The named stage in `panels/forward.typ`. Its children use local offsets. |
+| A detail panel | Its file under `panels/`. Geometry is at the top. Encoder stages, fusion layers, pooling operations, and MLP layers are laid out from lists. |
+| Shared boxes, labels, and arrows | `drawing.typ` |
+
+To add a forward stage, define its drawing function, add its width and caption
+to `pipeline`, and insert its key in `flow`. To add a standalone panel, add
+`panels/<name>.typ` with a `draw()` function and a matching `views` entry.
+The render script discovers panel files automatically. The view sets the
+minimum paper crop. Longer labels inside fixed-width boxes may need a width adjustment.
+
+For one figure, for example:
 
 ```bash
-cd architecture
-python shearnet_d4_architecture_4plots.py                  # -> ../figures/shearnet_arch_d4.{pdf,png}
-python shearnet_d4_architecture_4plots.py --format png     # png only
-python shearnet_d4_architecture_4plots.py --usetex         # real LaTeX text if available
-python shearnet_d4_architecture_4plots.py -o /tmp/arch     # custom output stem
+typst compile --input panel=detail3_network architecture/shearnet.typ network.pdf
 ```
 
-Pure matplotlib — no LaTeX toolchain required (`--usetex` is opt-in and falls back
-to mathtext when TeX is absent). Styling constants (`PALETTE`/`C`, `F`, block
-geometry) live at the top of the module.
+The previous Matplotlib version is in `architecture/shearnet_d4_architecture_4plots.py`.
 
 **`draw_single_stamp.ipynb`** renders **exactly one** galaxy through ShearNet's own
 `generate_dataset`, using the same PSF model, detection catalog and random seed as
