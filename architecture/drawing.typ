@@ -21,16 +21,20 @@
   frame(x,y,w,h,role, fill: if fill == auto {fills.at(role)} else {fill}, r: r, stroke: stroke, opacity: opacity)
   label(x+w/2,y+h/2,body,..font)
 }
-#let wire(x,y,X,Y,role: "line",width: pen.arrow,bend: 0deg,tip: true,opacity: 100%) = {
-  let a = pt(x,y)
-  let b = pt(X,Y)
-  let dx = b.first() - a.first()
-  let dy = b.last() - a.last()
-  let distance = calc.sqrt(calc.pow(dx/1pt,2) + calc.pow(dy/1pt,2))
-  let trim = if tip {pen.clearance/1pt / distance} else {0}
-  edge((a.first()+dx*trim,a.last()+dy*trim), (b.first()-dx*trim,b.last()-dy*trim),
-    if tip {"-|>"} else {"-"}, stroke: width + colors.at(role).transparentize(100% - opacity), bend: bend,
-    mark-scale: pen.tip-scale * (pen.tip-reference / width), snap-to: (none, none), layer: z.edge)
+// Panel geometry uses drawing units. Convert the common edge-to-edge span
+// separately on each axis so vertical and horizontal links match on paper.
+#let gap-x = connector.span / ux
+#let gap-y = connector.span / uy
+#let wire(x,y,X,Y,role: "line",bend: 0deg) = {
+  let (ax,ay) = pt(x,y)
+  let (bx,by) = pt(X,Y)
+  let dx = bx - ax
+  let dy = by - ay
+  let length = calc.sqrt(calc.pow(dx/1pt,2) + calc.pow(dy/1pt,2))*1pt
+  let trim = connector.clearance / length
+  edge((ax+dx*trim,ay+dy*trim), (bx - dx*trim,by - dy*trim),connector.head,
+    stroke: connector.stroke + colors.at(role),bend: bend,mark-scale: connector.head-scale,
+    snap-to: (none,none),layer: z.edge)
 }
 #let picture(x,y,size,asset,role) = {
   node(pt(x,y), image("stamps/" + asset, width: size*ux, height: size*uy, fit: "stretch"), layer: z.image)
@@ -42,8 +46,6 @@
     width: view.size.first(),height: view.size.last(),layer: z.viewport),
   body)
 
-// Join adjacent boxes on a horizontal row, leaving the same clearance at each end.
-#let join(right, left, y, role, width: pen.frame) = wire(
-  right + pen.inset, y, left - pen.inset, y, role: role, width: width)
+#let join(right,left,y,role) = wire(right,y,left,y,role: role)
 // Sum of the occupied width of a row, including its internal gaps.
 #let span(widths, gap) = widths.sum(default: 0) + calc.max(0, widths.len() - 1) * gap

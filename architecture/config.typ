@@ -18,9 +18,12 @@
 #let typeface = (text: "DejaVu Serif", math: "DejaVu Math TeX Gyre")
 #let fs = (group: 14pt, title: 12pt, formula: 11.2pt, body: 10.8pt, small: 9.8pt,
   tiny: 9pt, layer: 8.2pt, narrow: 7.8pt, head: 8pt, detail: 8.1pt, equation: 10.2pt)
-#let pen = (frame: 1pt, box: 0.85pt, inner: 0.7pt, fine: 0.55pt, arrow: 1.2pt,
-  tip-scale: 60%, tip-reference: 1pt, clearance: 1pt, pad: 1.8pt, leading: 0.27em, inset: 0.15, rim: 0.8pt, detail: 0.9pt,
+#let pen = (frame: 1pt, box: 0.85pt, inner: 0.7pt, fine: 0.55pt,
+  pad: 1.8pt, leading: 0.27em, rim: 0.8pt, detail: 0.9pt,
   fusion: 0.6pt, sheet: 0.65pt, head: 0.75pt)
+
+// Physical dimensions keep a serial connection identical in every panel.
+#let connector = (span: 16pt, stroke: 1pt, clearance: 1pt, head: "-|>", head-scale: 60%)
 
 // Display order. Numbered steps also supply the cross-references in detail titles.
 // Feature-map displays have captions but do not count as processing steps.

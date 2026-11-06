@@ -21,6 +21,7 @@
     }
   }
   label(g.summary-x,g.text-y,[signed mean $arrow.r Psi_1,Psi_2$ \ ordinary mean $arrow.r$ scalar],role: "muted")
-  wire(g.divider-x,g.divider-y.first(),g.divider-x,g.divider-y.last(),role: "orbit",width: pen.inner,tip: false,opacity: 55%)
+  f.edge(pt(g.divider-x,g.divider-y.first()),pt(g.divider-x,g.divider-y.last()),"-",
+    stroke: pen.inner + colors.orbit.transparentize(45%),snap-to: (none,none),layer: z.edge)
   label(g.response-x,g.text-y,[Response term \ $K=#model.psf-orbits$ PSF-only orbits])
 }

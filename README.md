@@ -146,8 +146,9 @@ Fletcher package on first use.
 | --- | --- |
 | Palette, type, strokes, crop, model dimensions, or encoder/head layers | `config.typ` |
 | Which stages appear and their order | `flow` in `config.typ`. Arrows, step numbers, and detail titles follow that order. |
-| A forward stage's width, gap, label, or internal drawing | The named stage in `panels/forward.typ`. Its children use local offsets. |
+| A forward stage's width, label, or internal drawing | The named stage in `panels/forward.typ`. Its children use local offsets. |
 | A detail panel | Its file under `panels/`. Geometry is at the top. Encoder stages, fusion layers, pooling operations, and MLP layers are laid out from lists. |
+| Arrow span, shaft width, tip, or edge clearance | `connector` in `config.typ`. Serial links share one physical span across panels. |
 | Shared boxes, labels, and arrows | `drawing.typ` |
 
 To add a forward stage, define its drawing function, add its width and caption

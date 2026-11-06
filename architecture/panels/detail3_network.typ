@@ -3,10 +3,10 @@
 
 #let layout = (left: 31, bottom: 2, height: 38.5, margin: 2.2, title-y: 37.5,
   footer-y: 4.8, label-gutter: 11, galaxy-y: 24.9, psf-y: 13.1, row-height: 7.4,
-  stem-width: 7, residual-width: 6.8, downsample-width: 8.5, gap: 2.8,
-  radius: 0.55, frame-radius: 1.2, dilation-width: 9.5, dilation-height: 8, dilation-gap: 3.2)
+  stem-width: 7, residual-width: 6.8, downsample-width: 8.5,
+  radius: 0.55, frame-radius: 1.2, dilation-width: 9.5, dilation-height: 8)
 #let fusion = (gap: 4.3, bottom: 7.3, width: 21.9, height: 27, inset: 1.4,
-  title-offset: 2.3, first-offset: 5.2, layer-gap: 1.9, footer-offset: 2.9, footer-space: 6.7, radius: 0.4,
+  title-offset: 2.3, first-offset: 5.2, footer-offset: 2.9, footer-space: 6.7, radius: 0.4,
   galaxy-port: 19.9, psf-port: 11.9, galaxy-bend: 8deg, psf-bend: -6deg)
 #let fusion-layers = (
   (height: 3.6, body: [$1 times 1$ projection \ + positions]),
@@ -26,16 +26,16 @@
     }
     tile(x,row,w,layout.row-height,role,body,size: if i == 0 {fs.narrow} else {fs.layer},r: layout.radius,stroke: pen.inner)
     x += w
-    if i + 1 < widths.len() {join(x,x+layout.gap,cy,role)}
-    x += layout.gap
+    if i + 1 < widths.len() {join(x,x+gap-x,cy,role)}
+    x += gap-x
   }
 }
 #let draw() = {
   let start = layout.left+layout.label-gutter
-  let encoder-end = start+span(widths,layout.gap)
-  let dilation-x = encoder-end+layout.dilation-gap
+  let encoder-end = start+span(widths,gap-x)
+  let dilation-x = encoder-end+gap-x
   let fusion-x = dilation-x+layout.dilation-width+fusion.gap
-  let gaps = calc.max(0,fusion-layers.len() - 1)*fusion.layer-gap
+  let gaps = calc.max(0,fusion-layers.len() - 1)*gap-y
   let stack-height = fusion-layers.map(l => l.height).sum(default: 0)+gaps
   // Footer space includes its two lines of text beneath the last layer.
   let fusion-height = calc.max(fusion.height,fusion.first-offset+stack-height+fusion.footer-space)
@@ -61,13 +61,13 @@
     let bottom = layer-top - layer.height
     tile(fusion-x+fusion.inset,bottom,fusion.width - 2*fusion.inset,layer.height,"fusion",layer.body,
       fill: white,size: fs.narrow,r: fusion.radius,stroke: pen.fusion)
-    layer-top = bottom - fusion.layer-gap
+    layer-top = bottom - gap-y
     if i + 1 < fusion-layers.len() {
-      wire(cx,bottom - pen.inset,cx,layer-top+pen.inset,role: "fusion",width: pen.rim)
+      wire(cx,bottom,cx,layer-top,role: "fusion")
     }
   }
   label(cx,fusion.bottom+fusion.footer-offset,[$d=#ch$; $h=#model.heads$ \ FFN width #model.ffn],size: fs.detail,role: "muted")
-  wire(dilation-x+layout.dilation-width+pen.inset,gy,fusion-x - pen.inset,fusion.bottom+fusion.galaxy-port,role: "galaxy",width: pen.frame,bend: fusion.galaxy-bend)
-  wire(encoder-end+pen.inset,py,fusion-x - pen.inset,fusion.bottom+fusion.psf-port,role: "psf",width: pen.frame,bend: fusion.psf-bend)
+  wire(dilation-x+layout.dilation-width,gy,fusion-x,fusion.bottom+fusion.galaxy-port,role: "galaxy",bend: fusion.galaxy-bend)
+  wire(encoder-end,py,fusion-x,fusion.bottom+fusion.psf-port,role: "psf",bend: fusion.psf-bend)
   label((layout.left+right)/2,layout.footer-y,[LayerNorm + GELU; anti-aliased downsampling; outputs $#model.side^2 times #ch$.],size: fs.tiny,role: "muted")
 }
