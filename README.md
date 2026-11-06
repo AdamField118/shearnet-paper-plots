@@ -163,9 +163,15 @@ For one figure, for example:
 typst compile --input panel=detail3_network architecture/shearnet.typ network.pdf
 ```
 
-To regenerate the PSF thumbnail from the saved simulation, run
-`python architecture/psf_stamp.py`. Its display floor is zero, with the paper’s
-navy–gray–gold palette and an asinh stretch for the faint wings.
+Run `python architecture/psf_stamp.py` to regenerate both thumbnails from the
+saved 53×53 input arrays. The PSF thumbnail shows the central
+33×33 pixels (set in `architecture/stamps/psf_preview_side.txt`). Both use the paper's navy–gray–gold gradient and show
+individual pixels. The galaxy uses linear 1st–99.7th percentile limits. The PSF
+uses the positive-pixel log stretch from the
+[LITB III Figure C1 notebook](https://github.com/s-Sayan/LITB-III-plots/blob/4712964/Appendix/C/figC2_star_psfex_ngmix.ipynb),
+with the 1st and 99.7th percentiles computed on the positive pixels in the
+displayed PSF crop. Values below the floor appear navy. The PSF input
+is rendered from PSFEx, corresponding to C1's middle panel.
 
 The previous Matplotlib version is in `architecture/shearnet_d4_architecture_4plots.py`.
 

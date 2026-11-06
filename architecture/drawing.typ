@@ -36,8 +36,8 @@
     stroke: connector.stroke + colors.at(role),bend: bend,mark-scale: connector.head-scale,
     snap-to: (none,none),layer: z.edge)
 }
-#let picture(x,y,size,asset,role) = {
-  node(pt(x,y), image("stamps/" + asset, width: size*ux, height: size*uy, fit: "stretch"), layer: z.image)
+#let picture(x,y,size,asset,role,scaling: auto) = {
+  node(pt(x,y), image("stamps/" + asset, width: size*ux, height: size*uy, fit: "stretch", scaling: scaling), layer: z.image)
   node(pt(x,y), width: size*ux, height: size*uy, shape: f.shapes.rect,
     stroke: (if role == "pool" {pen.fine} else {pen.rim}) + colors.at(role), layer: z.label)
 }

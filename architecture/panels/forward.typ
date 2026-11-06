@@ -6,6 +6,7 @@
 #let layout = (left: 3.25, bottom: 55, height: 31, flow: 11, caption: -7.8,
   caption-gap: 3.1, corner: 1.7, columns: 2)
 #let inputs = (size: 10.5, rows: (19,3.5), label-rise: 7.6)
+#let psf-side = int(read("../stamps/psf_preview_side.txt").trim())
 #let orbit-grid = (bottom: -2.5, height: 37, radius: 2.1, first: 22.8,
   pitch: (9.6,6.2), cell: (8.5,4.7), radius-cell: 0.7, title: 31.9, note: 0.6)
 #let cnn = (inset: 2, width: 8, height: 6.5, rows: (15.2,4.4), fusion: (8.5,10),
@@ -22,8 +23,12 @@
 #let grid-cell(i) = (calc.rem(i,layout.columns),calc.quo(i,layout.columns))
 #let input-stage(x,w) = {
   for (row,role,title) in inputs.rows.zip(("galaxy","psf"),([galaxy],[PSF])) {
-    picture(x+w/2,y(row),inputs.size,role+".png",role)
+    picture(x+w/2,y(row),inputs.size,role+".png",role,scaling: "pixelated")
     label(x+w/2,y(row+inputs.label-rise),title,size: fs.body,role: role,bold: true)
+    if role == "psf" {
+      label(x+w/2,y(row - inputs.size/2 - layout.caption-gap/2),
+        [#(psf-side)×#(psf-side) crop],size: fs.narrow,role: "muted")
+    }
   }
 }
 #let orbit-stage(x,w) = {

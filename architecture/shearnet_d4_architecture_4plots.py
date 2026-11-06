@@ -23,10 +23,10 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import Normalize, to_rgba
+from matplotlib.colors import to_rgba
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Polygon
 
-from psf_stamp import PSF_CMAP, psf_norm
+from psf_stamp import STAMP_CMAP, galaxy_norm, psf_norm, psf_preview
 
 
 FIGSIZE = (11.0, 5.5)
@@ -187,13 +187,14 @@ def arrow(ax, p0, p1, *, color=C["line"], lw=1.2, rad=0.0, style="-|>", zorder=8
     )
 
 
-def stamp(ax, cx, cy, size, image, *, norm, edge, cmap="viridis"):
+def stamp(ax, cx, cy, size, image, *, norm, edge):
     ax.imshow(
         image,
         extent=(cx - size / 2, cx + size / 2, cy - size / 2, cy + size / 2),
-        cmap=cmap,
+        cmap=STAMP_CMAP,
         norm=norm,
-        interpolation="bilinear",
+        origin="lower",
+        interpolation="nearest",
         aspect="auto",
         zorder=4,
     )
@@ -260,11 +261,13 @@ def draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_display_norm):
     """Draw the sparse, left-to-right forward path."""
     # Inputs
     stamp(ax, 8.5, 74.0, 10.5, galaxy, norm=gal_norm, edge=C["galaxy"])
-    stamp(ax, 8.5, 58.5, 10.5, psf, norm=psf_display_norm, edge=C["psf"], cmap=PSF_CMAP)
+    stamp(ax, 8.5, 58.5, 10.5, psf, norm=psf_display_norm, edge=C["psf"])
     ax.text(8.5, 80.8, "galaxy", ha="center", fontsize=FS["body"],
             color=C["galaxy"], fontweight="bold")
     ax.text(8.5, 65.3, "PSF", ha="center", fontsize=FS["body"],
             color=C["psf"], fontweight="bold")
+    ax.text(8.5, 51.7, f"{psf.shape[1]}×{psf.shape[0]} crop", ha="center", va="center",
+            fontsize=7.8, color=C["muted"])
     stage_label(ax, 8.5, 48.0, "1. Inputs", sub=r"$53\!\times\!53$ pixels")
 
     # Joint orbit, following the compact stacked presentation common in D4 papers.
@@ -565,9 +568,8 @@ def build_figure(figsize=FIGSIZE):
     ax.axis("off")
 
     galaxy, psf = load_stamps()
-    gal_lo, gal_hi = np.percentile(galaxy, [1.0, 99.7])
-    gal_norm = Normalize(vmin=float(gal_lo), vmax=float(gal_hi))
-    draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_norm(psf))
+    psf = psf_preview(psf)
+    draw_main_pipeline(ax, galaxy, psf, galaxy_norm(galaxy), psf_norm(psf))
     draw_symmetry_note(ax)
     draw_architecture_detail(ax)
     draw_pooling_detail(ax)
@@ -588,9 +590,8 @@ def build_panel(panel):
 
     if panel == "forward":
         galaxy, psf = load_stamps()
-        gal_lo, gal_hi = np.percentile(galaxy, [1.0, 99.7])
-        gal_norm = Normalize(vmin=float(gal_lo), vmax=float(gal_hi))
-        draw_main_pipeline(ax, galaxy, psf, gal_norm, psf_norm(psf))
+        psf = psf_preview(psf)
+        draw_main_pipeline(ax, galaxy, psf, galaxy_norm(galaxy), psf_norm(psf))
     elif panel == "detail3":
         draw_architecture_detail(ax)
     elif panel == "detail4":
