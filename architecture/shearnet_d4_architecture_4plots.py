@@ -26,7 +26,7 @@ import numpy as np
 from matplotlib.colors import to_rgba
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Polygon
 
-from psf_stamp import STAMP_CMAP, galaxy_norm, psf_norm, psf_preview
+from psf_stamp import STAMP_CMAP, psf_preview, stamp_norm
 
 
 FIGSIZE = (11.0, 5.5)
@@ -569,7 +569,7 @@ def build_figure(figsize=FIGSIZE):
 
     galaxy, psf = load_stamps()
     psf = psf_preview(psf)
-    draw_main_pipeline(ax, galaxy, psf, galaxy_norm(galaxy), psf_norm(psf))
+    draw_main_pipeline(ax, galaxy, psf, stamp_norm(galaxy), stamp_norm(psf))
     draw_symmetry_note(ax)
     draw_architecture_detail(ax)
     draw_pooling_detail(ax)
@@ -591,7 +591,7 @@ def build_panel(panel):
     if panel == "forward":
         galaxy, psf = load_stamps()
         psf = psf_preview(psf)
-        draw_main_pipeline(ax, galaxy, psf, galaxy_norm(galaxy), psf_norm(psf))
+        draw_main_pipeline(ax, galaxy, psf, stamp_norm(galaxy), stamp_norm(psf))
     elif panel == "detail3":
         draw_architecture_detail(ax)
     elif panel == "detail4":
