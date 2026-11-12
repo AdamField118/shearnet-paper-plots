@@ -347,11 +347,13 @@ and that module answers only whether the local TeX can render.
 All of it is in `results/shear_stats.py`, written down once.
 
 **The cut** is on **ngmix's own Gaussian fit**, product by product:
-`flags_t == 0`, `T_t / Tpsf_t > 1` and `s2n_t > 10`, where `t` is a metacal product
-(`noshear`, `1p`, `1m`, `2p`, `2m`) and `T`, `Tpsf`, `s2n` are the `NGMIX` columns
-with that suffix (`Tpsf` is ngmix's fit of the PSF that product was fitted with: for
-metacal, the dilated reconvolution PSF). Never the truth radius, the stamp S/N or a
-catalog proxy. The same ngmix-defined sample is used for both estimators.
+`flags_t == 0`, `T_t / T_PSF > 1` and `s2n_t > 10`, where `t` is a metacal product
+(`noshear`, `1p`, `1m`, `2p`, `2m`), `T`, `s2n` are the `NGMIX` columns with that
+suffix, and `T_PSF` is `STAMP.psf_T_admom`, the PSF stamp's adaptive-moment trace —
+the `Tpsf` superbit-lensing's `ngmix_fit.py` writes. Not `NGMIX.Tpsf_t`: with em5 that
+is the EM mixture's unweighted second moment, ~8x the PSF's size on the SuperBIT PSFs,
+and dividing by it kept only 4–7% of galaxies. Never the truth radius, the stamp S/N
+or a catalog proxy. The same ngmix-defined sample is used for both estimators.
 
 **Where it acts** — only where m, c and R are formed, per applied-shear population,
 as SuperBIT's `compute_R_S` does:

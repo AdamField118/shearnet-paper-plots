@@ -12,7 +12,7 @@
 # has to be copied. Without --fits, the fourth unit test found there is used.
 #
 # THE CUT. Table 2 and Figures 4 and 5 are measured on the sample that passes
-# ngmix's own fit: T/Tpsf > 1 and s2n > 10 (flags == 0), applied right before m,
+# ngmix's own fit: T/T_PSF > 1 and s2n > 10 (flags == 0), applied right before m,
 # c and R are formed, with metacal's selection response R^S in the calibration
 # (results/shear_stats.py says exactly how). Figure 3 is NEVER cut: it shows the
 # whole population, because it is what motivates the cut. --cut none turns the
@@ -43,7 +43,7 @@ Options:
   --runs DIR            the four unit-test catalogs: Figure 4
   --out DIR             where figures and .tex fragments go (default: output/)
   --cut metacal|none    the sample cut (default metacal); never applied to Figure 3
-  --min-t-ratio X       T/Tpsf threshold of the metacal cut (default 1)
+  --min-t-ratio X       T/T_PSF threshold of the metacal cut (default 1)
   --min-s2n X           s2n threshold of the metacal cut (default 10)
   -h, --help            this
 

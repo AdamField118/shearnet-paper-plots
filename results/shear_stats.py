@@ -7,13 +7,21 @@ THE SAMPLE CUT (``PAPER_CUT``)
 ------------------------------
 On **ngmix's own Gaussian fit** of each metacal product ``t``::
 
-    flags_t == 0,   T_t / Tpsf_t > 1,   s2n_t > 10
+    flags_t == 0,   T_t / T_PSF > 1,   s2n_t > 10
 
-``T_t``, ``Tpsf_t``, ``s2n_t``, ``flags_t`` are the ``NGMIX`` columns with that
-suffix: ``T`` is the fitted pre-PSF galaxy size, ``Tpsf`` is ngmix's fit of the
-PSF *that product was fitted with* (for metacal, the dilated reconvolution
-PSF -- the ``Tpsf_noshear`` SuperBIT divides by), ``s2n`` is ngmix's S/N. Never
-the truth radius, never the stamp S/N, never a catalog proxy.
+``T_t``, ``s2n_t``, ``flags_t`` are the ``NGMIX`` columns with that suffix:
+``T`` is the fitted pre-PSF galaxy size, ``s2n`` is ngmix's S/N. ``T_PSF`` is
+``STAMP.psf_T_admom``, the adaptive-moment trace of the PSF stamp: the
+``Tpsf`` superbit-lensing's ``metacalibration/ngmix_fit.py`` writes
+(``utils.get_admoms_ngmix_fit``). Never the truth radius, never the stamp S/N,
+never a catalog proxy.
+
+Not ``NGMIX.Tpsf_t``: with the em5 PSF model that is the EM mixture's
+unweighted second moment (``GMix.get_T``), which its broad, faint components
+inflate to ~8x the PSF's adaptive size on the SuperBIT PSFEx PSFs. Divided into
+by it, T/Tpsf put the threshold inside the galaxies' size distribution, kept
+4--7% of galaxies, and turned the cut into a selection on ellipticity
+(R^S ~ 0.5 in UT3/UT4, ~1.9 in UT2's single size).
 
 The **same ngmix-defined sample** is used for both estimators, so ShearNet and
 ngmix are compared on identical galaxies. A record also has to be measurable by
@@ -106,9 +114,10 @@ class SelectionCut:
     min_s2n: float = 10.0
 
     def describe(self) -> str:
-        return (f"ngmix T_t/Tpsf_t > {self.min_t_ratio:g} and s2n_t > {self.min_s2n:g} "
-                "(flags_t == 0) on each metacal product t's own fit; sample = "
-                "noshear selection; R = <R^gamma> + R^S")
+        return (f"ngmix T_t/T_PSF > {self.min_t_ratio:g} and s2n_t > {self.min_s2n:g} "
+                "(flags_t == 0) on each metacal product t's own fit, T_PSF the PSF "
+                "stamp's adaptive-moment trace; sample = noshear selection; "
+                "R = <R^gamma> + R^S")
 
 
 #: The cut the paper applies.
@@ -135,15 +144,16 @@ def _finite_rows(array: np.ndarray, n_lead: int = 3) -> np.ndarray:
 
 
 def _cut_columns(mtype: str) -> list:
-    return [f"T_{mtype}", f"Tpsf_{mtype}", f"s2n_{mtype}", f"flags_{mtype}"]
+    return [f"T_{mtype}", f"s2n_{mtype}", f"flags_{mtype}"]
 
 
-def ngmix_passes(ngmix: dict, mtype: str, cut: SelectionCut) -> np.ndarray:
+def ngmix_passes(ngmix: dict, mtype: str, cut: SelectionCut, Tpsf: np.ndarray) -> np.ndarray:
     """Whether each record passes ``cut`` on ngmix's fit of product ``mtype``.
 
-    ``ngmix`` maps ``NGMIX`` column names to arrays (``Catalog.columns``).
+    ``ngmix`` maps ``NGMIX`` column names to arrays (``Catalog.columns``);
+    ``Tpsf`` is ``STAMP.psf_T_admom`` (see THE SAMPLE CUT).
     """
-    T, Tpsf, s2n, flags = (ngmix[name] for name in _cut_columns(mtype))
+    T, s2n, flags = (ngmix[name] for name in _cut_columns(mtype))
     ok = (flags == 0) & np.isfinite(T) & np.isfinite(Tpsf) & (Tpsf > 0) & np.isfinite(s2n)
     with np.errstate(divide="ignore", invalid="ignore"):
         ok &= (T / Tpsf > cut.min_t_ratio) & (s2n > cut.min_s2n)
@@ -183,7 +193,7 @@ class Sample:
             wanted[TABLE[est]] |= {f"flags_{v}" for v in flag_variants}
         for mtype in SELECTION_TYPES:
             wanted["NGMIX"] |= set(_cut_columns(mtype))
-        wanted["STAMP"].add("psf_g")
+        wanted["STAMP"] |= {"psf_g", "psf_T_admom"}
         cols = {table: cat.columns(table, sorted(names), self.scenes)
                 for table, names in wanted.items() if names}
 
@@ -211,8 +221,8 @@ class Sample:
 
         self.select = {}
         for mtype in SELECTION_TYPES:
-            self.select[mtype] = (valid if cut is None
-                                  else valid & ngmix_passes(ngmix, mtype, cut))
+            self.select[mtype] = (valid if cut is None else valid & ngmix_passes(
+                ngmix, mtype, cut, cols["STAMP"]["psf_T_admom"]))
 
     def scene_index(self, name: str) -> int:
         return self.scenes.index(name)
@@ -355,6 +365,9 @@ def shear_bias(sample: Sample, est: str, njack: int = DEFAULT_NJACK,
             / (half_separation * (Rg[p, a, a] + Rg[q, a, a])) - 1.0,
             "R_aa": 0.5 * (R[p, a, a] + R[q, a, a]),
             "RS_aa": 0.5 * (c["RS"][p, a, a] + c["RS"][q, a, a]),
+            # c is divided by the other diagonal
+            "R_bb": 0.5 * (R[p, b, b] + R[q, b, b]),
+            "RS_bb": 0.5 * (c["RS"][p, b, b] + c["RS"][q, b, b]),
         }
 
     out = blocks.estimate(fn)

@@ -97,7 +97,8 @@ def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HD
     tables = {"TRUTH": dict(keys, e_prepsf=e_true, g_applied=g_applied),
               "STAMP": dict(keys, input_fingerprint=np.ones((rows, 2, 4), np.float32),
                             metacal_fingerprint=np.ones((rows, 9, 2, 4), np.float32),
-                            psf_g=gpsf, psf_flags=np.zeros(rows, np.int32),
+                            psf_g=gpsf, psf_T_admom=np.full(rows, TRUTH["Tpsf"]),
+                            psf_flags=np.zeros(rows, np.int32),
                             s2n_stamp=s2n0[catalog_row] * 4.0)}
 
     for est, table in (("ngmix", "NGMIX"), ("shearnet", "SHEARNET")):

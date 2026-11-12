@@ -71,7 +71,9 @@ def collect(root, args):
                     "m1_without_RS": _num(b["m_without_RS"][0]),
                     "m1_without_RS_err": _num(b["m_without_RS"][1]),
                     "R11": _num(b["R_aa"][0]), "RS11": _num(b["RS_aa"][0]),
-                    "RS11_err": _num(b["RS_aa"][1]), "n_selected": b["n_selected"],
+                    "RS11_err": _num(b["RS_aa"][1]),
+                    "R22": _num(b["R_bb"][0]), "RS22": _num(b["RS_bb"][0]),
+                    "RS22_err": _num(b["RS_bb"][1]), "n_selected": b["n_selected"],
                     "Rpsf_corrected": corrected,
                     "other_Rpsf": {
                         "Rpsf_corrected": not corrected,
@@ -96,7 +98,8 @@ def report(data) -> str:
                 f"  {label} {est:8s} m1 = ({v['m1'] * 1e3:+.2f} +/- {v['m1_err'] * 1e3:.2f})e-3"
                 f"   c2 = ({v['c2'] * 1e5:+.2f} +/- {v['c2_err'] * 1e5:.2f})e-5"
                 f"   [without R^S: m1 = {v['m1_without_RS'] * 1e3:+.2f}e-3;"
-                f" R^S_11 = {v['RS11']:+.4f}; n = {v['n_selected']}]")
+                f" R^S_11 = {v['RS11']:+.4f}; R_22 = {v['R22']:+.4f}, R^S_22 = {v['RS22']:+.4f};"
+                f" n = {v['n_selected']}]")
             o = v.get("other_Rpsf")
             if o:
                 lines.append(

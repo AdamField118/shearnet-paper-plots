@@ -60,10 +60,10 @@ def test_each_product_is_cut_on_its_own_fit(tmp_path):
     hdul = build(200, seed=1, kappa=0.0)
     ngmix = hdul["NGMIX"].data
     # every object passes everywhere, then break exactly one thing per product
+    hdul["STAMP"].data["psf_T_admom"][:] = 0.1
     for t in ("noshear", "1p", "1m", "2p", "2m"):
         ngmix[f"s2n_{t}"][:] = 50.0
         ngmix[f"T_{t}"][:] = 1.0
-        ngmix[f"Tpsf_{t}"][:] = 0.1
     ngmix["s2n_1p"][0] = 10.0          # == threshold: fails (strict)
     ngmix["T_1m"][1] = 0.1             # T/Tpsf == 1: fails (strict)
     ngmix["flags_2p"][2] = 4           # ngmix failed on that product
@@ -73,14 +73,30 @@ def test_each_product_is_cut_on_its_own_fit(tmp_path):
     cat = Catalog(path)
     scene = ["zero"]
     flat = {}
+    Tpsf = cat.columns("STAMP", ["psf_T_admom"], scene)["psf_T_admom"]
     for t in ("noshear", "1p", "1m", "2p", "2m"):
         ngmix_cols = cat.columns("NGMIX", shear_stats._cut_columns(t), scene)
-        flat[t] = ngmix_passes(ngmix_cols, t, PAPER_CUT).reshape(-1)
+        flat[t] = ngmix_passes(ngmix_cols, t, PAPER_CUT, Tpsf).reshape(-1)
     assert not flat["1p"][0] and flat["noshear"][0]
     assert not flat["1m"][1] and flat["noshear"][1]
     assert not flat["2p"][2] and flat["noshear"][2]
     assert flat["noshear"][3]
     assert all(flat[t][4:].all() for t in flat)
+
+
+def test_the_cut_divides_by_the_psf_adaptive_moments_not_ngmix_tpsf(tmp_path):
+    """An em5 mixture's T (NGMIX Tpsf_t) is ~8x the PSF's size; it must not set the cut."""
+    hdul = build(500, seed=2)
+    path_a, path_b, path_c = (tmp_path / f"{x}.fits" for x in "abc")
+    hdul.writeto(path_a)
+    for t in ("noshear", "1p", "1m", "2p", "2m"):
+        hdul["NGMIX"].data[f"Tpsf_{t}"][:] *= 8.0
+    hdul.writeto(path_b)
+    hdul["STAMP"].data["psf_T_admom"][:] *= 8.0
+    hdul.writeto(path_c)
+    a, b, c = (Sample(Catalog(p), PAIR).select["noshear"] for p in (path_a, path_b, path_c))
+    assert np.array_equal(a, b)
+    assert c.sum() < a.sum()
 
 
 def test_selection_ignores_truth_and_stamp_quantities(tmp_path):

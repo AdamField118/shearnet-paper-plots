@@ -38,7 +38,7 @@ with no response division and no R^PSF. ``--shape raw`` restores the previous
 figure: both on ``g_original``, no response division, no R^PSF.
 
 With the default ``--cut metacal`` the sample is the paper's cut (ngmix
-T/Tpsf > 1 and s2n > 10 on the noshear fit, see :mod:`shear_stats`), and an
+T/T_PSF > 1 and s2n > 10 on the noshear fit, see :mod:`shear_stats`), and an
 object is kept only if **every** ring station passes, so the ring average still
 cancels intrinsic shape. The same objects are used for both estimators.
 ``--cut none`` uses every object.

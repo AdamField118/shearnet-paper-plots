@@ -43,7 +43,8 @@ def test_collect_uses_the_shear_stats_estimator(tmp_path):
     data = collect(tmp_path, args)
     result = data["runs"]["first"]["estimators"]
     assert data["runs"]["second"]["estimators"] == {}
-    assert "T_t/Tpsf_t > 1" in data["cut"] and "s2n_t > 10" in data["cut"]
+    assert "T_t/T_PSF > 1" in data["cut"] and "s2n_t > 10" in data["cut"]
+    assert result["ngmix"]["R22"] is not None and result["ngmix"]["RS22"] is not None
     sample = Sample(Catalog(path), list(G1_PAIR), cut=PAPER_CUT)
     for est in ("shearnet", "ngmix"):
         expected = shear_bias(sample, est)

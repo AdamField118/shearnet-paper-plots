@@ -55,7 +55,7 @@ def main(argv=None) -> int:
     parser.add_argument("--estimators", nargs="*", default=list(ESTIMATORS))
     parser.add_argument("--njack", type=int, default=DEFAULT_NJACK)
     parser.add_argument("--cut", choices=("metacal", "none"), default="metacal",
-                        help="metacal (default): ngmix T/Tpsf > 1 and s2n > 10 on each "
+                        help="metacal (default): ngmix T/T_PSF > 1 and s2n > 10 on each "
                              "metacal product's own fit, with R^S. none: every record.")
     parser.add_argument("--min-t-ratio", type=float, default=None)
     parser.add_argument("--min-s2n", type=float, default=None)
