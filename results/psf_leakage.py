@@ -30,10 +30,12 @@ percentile bin, LITB III Appendix D).
 
 ``--rpsf on`` / ``--rpsf off`` R^PSF-correct both estimators or neither,
 instead of the paper's choice (``--rpsf paper``: ngmix only); the labels then
-say which.
+say which. ``--rpsf paper+off`` draws the paper's curves and, as a third curve,
+each estimator the paper R^PSF-corrects (ngmix) without the correction.
 
-``--shape raw`` restores the previous figure: both on ``g_original``, no
-response division, no R^PSF.
+``--shape noshear`` is the calibrated shape before any calibration: ``g_noshear``
+with no response division and no R^PSF. ``--shape raw`` restores the previous
+figure: both on ``g_original``, no response division, no R^PSF.
 
 With the default ``--cut metacal`` the sample is the paper's cut (ngmix
 T/Tpsf > 1 and s2n > 10 on the noshear fit, see :mod:`shear_stats`), and an
@@ -60,18 +62,25 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from catalog import DISPLAY_NAME, Catalog  # noqa: E402
 from paper_labels import label_psf_leakage  # noqa: E402
-from shear_stats import (Sample, calibrated_leakage_inputs, cut_from_name,  # noqa: E402
-                         leakage_inputs)
+from shear_stats import (PSF_CORRECTED, Sample, calibrated_leakage_inputs,  # noqa: E402
+                         cut_from_name, leakage_inputs)
 
 #: --shape choices. calibrated: each estimator's own m/c pipeline (see above).
-SHAPES = ("calibrated", "raw")
+SHAPES = ("calibrated", "noshear", "raw")
+
+#: The uncalibrated shapes: which measurement each one is.
+UNCALIBRATED_VARIANT = {"noshear": "noshear", "raw": "original"}
 
 #: The shape names paper_labels uses to label the y axis.
-LABEL_SHAPE = {"calibrated": "rgamma", "raw": "raw"}
+LABEL_SHAPE = {"calibrated": "rgamma", "noshear": "raw", "raw": "raw"}
+
+#: The third curve of ``--rpsf paper+off``.
+EXTRA_STYLE = {"color": "0.45", "marker": "s", "ls": ":"}
 
 
 def _import_superbit():
@@ -145,6 +154,27 @@ def panel_fits_for(data, out_fits, *, nbin=10, min_count=20, njac=30,
             by_label["E2PSF"]["alpha_full_2"], by_label["E2PSF"]["alpha_err_2"])
 
 
+def add_leakage_curve(fig, panel_fits, label, *, color, marker, ls):
+    """One more curve on ``plot_psf_leakage_comparison``'s figure.
+
+    Upstream draws exactly two panel FITS; this draws a third from its panel
+    FITS the way upstream draws each of its two (binned medians with their
+    errors, the fitted alpha x + beta, the alpha in the legend).
+    """
+    from astropy.table import Table
+    for ax, (hdu, i) in zip(fig.axes, (("E1PSF", 1), ("E2PSF", 2))):
+        tab = Table.read(panel_fits, hdu=hdu)
+        x = np.asarray(tab["x_bin"])
+        alpha, beta, err = (tab.meta[f"{k}{i}"] for k in ("AFULL", "BFULL", "AERR"))
+        ax.errorbar(x, np.asarray(tab[f"y_bin_{i}"]), yerr=np.asarray(tab[f"yerr_bin_{i}"]),
+                    fmt=marker, ms=8, capsize=3, elinewidth=1.9,
+                    color=color, mec=color, mfc="white",
+                    label=rf"{label}: $\alpha_{i}={alpha:.3f}\ ({abs(alpha) / err:.2f}\sigma)$")
+        xx = np.linspace(x.min(), x.max(), 1000)
+        ax.plot(xx, alpha * xx + beta, color=color, lw=2.2, ls=ls)
+        ax.legend(frameon=False, borderpad=0.8, handlelength=2.5)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -160,12 +190,13 @@ def main(argv=None):
     p.add_argument("--cut", choices=("metacal", "none"), default="metacal")
     p.add_argument("--min-t-ratio", type=float, default=None)
     p.add_argument("--min-s2n", type=float, default=None)
-    p.add_argument("--rpsf", choices=("paper", "on", "off"), default="paper",
+    p.add_argument("--rpsf", choices=("paper", "on", "off", "paper+off"), default="paper",
                    help="R^PSF correction of the calibrated shapes: paper (default; "
-                        "ngmix only), on (both estimators) or off (neither)")
+                        "ngmix only), on (both estimators), off (neither), or "
+                        "paper+off (the paper's, plus ngmix uncorrected as a third curve)")
     p.add_argument("--shape", choices=SHAPES, default="calibrated",
                    help="calibrated (default): noshear - R^PSF e^PSF over R. "
-                        "raw: g_original, uncorrected.")
+                        "noshear: g_noshear, no R, no R^PSF. raw: g_original, uncorrected.")
     p.add_argument(
         "--panel-dir", default=None,
         help="keep the intermediate per-estimator panel FITS here",
@@ -175,6 +206,8 @@ def main(argv=None):
     p.add_argument("--format", nargs="+", default=["pdf", "png"])
     p.add_argument("--dpi", type=int, default=300)
     args = p.parse_args(argv)
+    if args.rpsf == "paper+off" and args.shape != "calibrated":
+        p.error("--rpsf paper+off needs --shape calibrated")
 
     catalog = Catalog(args.fits)
     print(catalog)
@@ -192,17 +225,24 @@ def main(argv=None):
         panel_dir = Path(tmp.name)
     panel_dir.mkdir(parents=True, exist_ok=True)
 
+    # (estimator, R^PSF override): None is the paper's choice
+    override = {"paper": None, "paper+off": None, "on": True, "off": False}[args.rpsf]
+    curves = [(estimator, override) for estimator in chosen]
+    if args.rpsf == "paper+off":
+        curves += [(estimator, False) for estimator in chosen if PSF_CORRECTED[estimator]]
+
     try:
         panel_files, labels = [], []
-        for estimator in chosen:
+        for estimator, override in curves:
             if args.shape == "calibrated":
-                override = None if args.rpsf == "paper" else args.rpsf == "on"
                 data = calibrated_leakage_inputs(sample, estimator, scene="zero",
                                                  psf_corrected=override)
             else:
-                data = leakage_inputs(sample, estimator, scene="zero", variant="original")
-                data.update(correct_psf_leakage=False, shape="original, uncorrected")
-            out_fits = panel_dir / f"panels_{estimator}.fits"
+                variant = UNCALIBRATED_VARIANT[args.shape]
+                data = leakage_inputs(sample, estimator, scene="zero", variant=variant)
+                data.update(correct_psf_leakage=False, shape=f"g_{variant}, uncalibrated")
+            tag = "" if override is None else ("_rpsf" if override else "_norpsf")
+            out_fits = panel_dir / f"panels_{estimator}{tag}.fits"
             a1, a1e, a2, a2e = panel_fits_for(
                 data, out_fits, nbin=args.nbin, min_count=args.min_count, njac=args.njac,
                 correct_psf_leakage=data["correct_psf_leakage"])
@@ -215,7 +255,8 @@ def main(argv=None):
                   f"alpha2 = {a2:+.4f} +/- {a2e:.4f}")
             panel_files.append(out_fits)
             label = DISPLAY_NAME.get(estimator, estimator)
-            if args.rpsf != "paper":  # the paper figure keeps its plain names
+            # the paper figure keeps its plain names; the others say which is which
+            if args.shape == "calibrated" and args.rpsf != "paper":
                 label += (r" ($R^{\rm PSF}$-corrected)" if data["correct_psf_leakage"]
                           else r" (no $R^{\rm PSF}$)")
             labels.append(label)
@@ -236,6 +277,8 @@ def main(argv=None):
         from paper_colors import COLORS, recolor_artists, style_leakage_lines
         recolor_artists(fig, {"magenta": COLORS[chosen[0]], "teal": COLORS[chosen[1]]})
         style_leakage_lines(fig)
+        for panel_file, label in zip(panel_files[2:], labels[2:]):
+            add_leakage_curve(fig, panel_file, label, **EXTRA_STYLE)
         label_psf_leakage(fig, shapes=[LABEL_SHAPE[args.shape]] * len(chosen))
         for fmt in args.format:
             path = stem.with_suffix(f".{fmt}")

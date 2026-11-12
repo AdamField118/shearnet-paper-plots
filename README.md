@@ -245,8 +245,11 @@ the R^PSF correction and the drawing are `superbit_lensing`'s
 this script only selects the objects and columns, ring-averaged over the unsheared
 population: each estimator's `g_noshear` divided by its own `R = <R^gamma> + R^S`,
 with `correct_psf_leakage=True` for ngmix only. `--rpsf on` / `--rpsf off`
-R^PSF-correct both estimators or neither (the legend then says which).
-`--shape raw` draws the uncorrected `g_original` of both instead.
+R^PSF-correct both estimators or neither (the legend then says which);
+`--rpsf paper+off` adds ngmix without R^PSF as a third curve, drawn the way
+`plot_psf_leakage_comparison` draws its two. `--shape noshear` draws `g_noshear`
+with no response division and no R^PSF; `--shape raw` draws the uncorrected
+`g_original` of both instead.
 
 **`response_vs_snr.py`** bins in S/N quantiles: it prints each bin's edges,
 centre and object count and writes them to `*.bins.txt` next to the figure;
