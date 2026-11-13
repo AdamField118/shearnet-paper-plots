@@ -32,6 +32,7 @@ percentile bin, LITB III Appendix D).
 instead of the paper's choice (``--rpsf paper``: ngmix only); the labels then
 say which. ``--rpsf paper+off`` draws the paper's curves and, as a third curve,
 each estimator the paper R^PSF-corrects (ngmix) without the correction.
+``--rpsf both`` draws every estimator both with and without it (four curves).
 
 ``--shape noshear`` is the calibrated shape before any calibration: ``g_noshear``
 with no response division and no R^PSF. ``--shape raw`` restores the previous
@@ -79,8 +80,10 @@ UNCALIBRATED_VARIANT = {"noshear": "noshear", "raw": "original"}
 #: The shape names paper_labels uses to label the y axis.
 LABEL_SHAPE = {"calibrated": "rgamma", "noshear": "raw", "raw": "raw"}
 
-#: The third curve of ``--rpsf paper+off``.
-EXTRA_STYLE = {"color": "0.45", "marker": "s", "ls": ":"}
+#: The curves beyond the paper's two (``--rpsf paper+off`` / ``both``): each
+#: estimator with the R^PSF choice the paper does not make.
+EXTRA_STYLE = {"shearnet": {"color": "#6FA8DC", "marker": "D", "ls": "-."},
+               "ngmix": {"color": "0.45", "marker": "s", "ls": ":"}}
 
 
 def _import_superbit():
@@ -190,10 +193,12 @@ def main(argv=None):
     p.add_argument("--cut", choices=("metacal", "none"), default="metacal")
     p.add_argument("--min-t-ratio", type=float, default=None)
     p.add_argument("--min-s2n", type=float, default=None)
-    p.add_argument("--rpsf", choices=("paper", "on", "off", "paper+off"), default="paper",
+    p.add_argument("--rpsf", choices=("paper", "on", "off", "paper+off", "both"),
+                   default="paper",
                    help="R^PSF correction of the calibrated shapes: paper (default; "
-                        "ngmix only), on (both estimators), off (neither), or "
-                        "paper+off (the paper's, plus ngmix uncorrected as a third curve)")
+                        "ngmix only), on (both estimators), off (neither), "
+                        "paper+off (the paper's, plus ngmix uncorrected as a third curve), "
+                        "or both (every estimator with and without: four curves)")
     p.add_argument("--shape", choices=SHAPES, default="calibrated",
                    help="calibrated (default): noshear - R^PSF e^PSF over R. "
                         "noshear: g_noshear, no R, no R^PSF. raw: g_original, uncorrected.")
@@ -206,8 +211,8 @@ def main(argv=None):
     p.add_argument("--format", nargs="+", default=["pdf", "png"])
     p.add_argument("--dpi", type=int, default=300)
     args = p.parse_args(argv)
-    if args.rpsf == "paper+off" and args.shape != "calibrated":
-        p.error("--rpsf paper+off needs --shape calibrated")
+    if args.rpsf in ("paper+off", "both") and args.shape != "calibrated":
+        p.error(f"--rpsf {args.rpsf} needs --shape calibrated")
 
     catalog = Catalog(args.fits)
     print(catalog)
@@ -226,10 +231,12 @@ def main(argv=None):
     panel_dir.mkdir(parents=True, exist_ok=True)
 
     # (estimator, R^PSF override): None is the paper's choice
-    override = {"paper": None, "paper+off": None, "on": True, "off": False}[args.rpsf]
+    override = {"paper": None, "paper+off": None, "both": None,
+                "on": True, "off": False}[args.rpsf]
     curves = [(estimator, override) for estimator in chosen]
-    if args.rpsf == "paper+off":
-        curves += [(estimator, False) for estimator in chosen if PSF_CORRECTED[estimator]]
+    if args.rpsf in ("paper+off", "both"):
+        curves += [(estimator, not PSF_CORRECTED[estimator]) for estimator in chosen
+                   if args.rpsf == "both" or PSF_CORRECTED[estimator]]
 
     try:
         panel_files, labels = [], []
@@ -277,8 +284,8 @@ def main(argv=None):
         from paper_colors import COLORS, recolor_artists, style_leakage_lines
         recolor_artists(fig, {"magenta": COLORS[chosen[0]], "teal": COLORS[chosen[1]]})
         style_leakage_lines(fig)
-        for panel_file, label in zip(panel_files[2:], labels[2:]):
-            add_leakage_curve(fig, panel_file, label, **EXTRA_STYLE)
+        for panel_file, label, (estimator, _) in zip(panel_files[2:], labels[2:], curves[2:]):
+            add_leakage_curve(fig, panel_file, label, **EXTRA_STYLE[estimator])
         label_psf_leakage(fig, shapes=[LABEL_SHAPE[args.shape]] * len(chosen))
         for fmt in args.format:
             path = stem.with_suffix(f".{fmt}")

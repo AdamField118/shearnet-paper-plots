@@ -247,7 +247,8 @@ population: each estimator's `g_noshear` divided by its own `R = <R^gamma> + R^S
 with `correct_psf_leakage=True` for ngmix only. `--rpsf on` / `--rpsf off`
 R^PSF-correct both estimators or neither (the legend then says which);
 `--rpsf paper+off` adds ngmix without R^PSF as a third curve, drawn the way
-`plot_psf_leakage_comparison` draws its two. `--shape noshear` draws `g_noshear`
+`plot_psf_leakage_comparison` draws its two; `--rpsf both` draws each estimator
+with and without R^PSF (four curves). `--shape noshear` draws `g_noshear`
 with no response division and no R^PSF; `--shape raw` draws the uncorrected
 `g_original` of both instead.
 
