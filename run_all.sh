@@ -19,8 +19,8 @@
 # cut off everywhere else too.
 #
 # THE SHAPES. Both estimators are calibrated the same way: their metacal noshear
-# shape divided by their own R = <R^gamma> + R^S. ngmix's also has metacal's PSF
-# response removed; ShearNet's does not need it and does not.
+# shape divided by their own R = <R^gamma> + R^S. The paper subtracts metacal's PSF response
+# for ngmix only. Both estimators can retain residual leakage.
 
 set -euo pipefail
 
@@ -29,6 +29,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GO=0
 FITS=""
 RUNS=""
+ABELL=""
 OUTDIR="$ROOT/output"
 CUT_ARGS=(--cut metacal)
 
@@ -40,6 +41,7 @@ Options:
   --go                  actually run (default is a dry run)
   --fits PATH           the fiducial (UT4) catalog: Table 2, Figures 3 and 5
                         (default: the fourth unit test under --runs)
+  --abell3411 FITS      Abell 3411 UT4; defaults to fourth_worstpsf under --runs
   --runs DIR            the four unit-test catalogs: Figure 4
   --out DIR             where figures and .tex fragments go (default: output/)
   --cut metacal|none    the sample cut (default metacal); never applied to Figure 3
@@ -47,9 +49,8 @@ Options:
   --min-s2n X           s2n threshold of the metacal cut (default 10)
   -h, --help            this
 
-fig:psf-properties and the architecture schematic do not read a catalog: run
-psf/psf_properties.py and architecture/shearnet_d4_architecture_4plots.py
-directly.
+Figure 2 reproduces published Figure C1 of LITB III. The paired leakage
+plots and PSF ellipticity corner plot require both UT4 catalogs.
 USAGE
 }
 
@@ -67,6 +68,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --go) GO=1; shift ;;
         --fits) FITS="$(abspath "$2")"; shift 2 ;;
+        --abell3411) ABELL="$(abspath "$2")"; shift 2 ;;
         --runs) RUNS="$(abspath "$2")"; shift 2 ;;
         --out) OUTDIR="$(abspath "$2")"; shift 2 ;;
         --cut) CUT_ARGS[1]="$2"; shift 2 ;;
@@ -94,13 +96,19 @@ if [[ -n "$RUNS" && ! -d "$RUNS" ]]; then
     echo "--runs is not a directory: $RUNS" >&2
     exit 1
 fi
-if [[ -z "$FITS" && -n "$RUNS" ]]; then
-    FITS="$(python -c 'import sys; sys.path.insert(0, sys.argv[1])
+find_catalog() {
+    python -c 'import sys; sys.path.insert(0, sys.argv[1])
 from catalog import find_run
-print(find_run(sys.argv[2], "fourth") or "")' "$ROOT/results" "$RUNS")"
-    [[ -n "$FITS" ]] && echo "fiducial catalog: $FITS"
+print(find_run(sys.argv[2], sys.argv[3]) or "")' "$ROOT/results" "$RUNS" "$1"
+}
+if [[ -n "$RUNS" ]]; then
+    [[ -n "$FITS" ]] || FITS="$(find_catalog fourth)"
+    [[ -n "$ABELL" ]] || ABELL="$(find_catalog fourth_worstpsf)"
 fi
-
+if [[ -n "$ABELL" && ( ! -f "$ABELL" || ! -f "$FITS" ) ]]; then
+    echo "The Abell 3411 comparison needs both merged UT4 catalogs." >&2
+    exit 1
+fi
 echo "--- what the paper asks for ---"
 python "$ROOT/results/paper_manifest.py" ${RUNS:+--runs "$RUNS"} | tail -n 2
 echo
@@ -109,7 +117,6 @@ echo
 DELIVERABLES=(
     "tab:response-diag|results|response_diagnostics.py|--out $OUTDIR/tab_response_diag.tex|cut"
     "fig:response_snr|results|response_vs_snr.py|--out $OUTDIR/response_vs_snr.pdf|"
-    "fig:psf-leakage|results|psf_leakage.py|--out $OUTDIR/psf_leakage|cut"
     "tab:timing|results|timing_table.py|--out $OUTDIR/tab_timing.tex|"
 )
 
@@ -139,11 +146,17 @@ if [[ -n "$FITS" ]]; then
     for entry in "${DELIVERABLES[@]}"; do
         IFS='|' read -r label dir script extra takes_cut <<< "$entry"
         args=(--fits "$FITS")
-        # shellcheck disable=SC2206
-        [[ -n "$extra" ]] && args+=($extra)
+        [[ -n "$extra" ]] && args+=(--out "${extra#--out }")
         [[ -n "$takes_cut" ]] && args+=("${CUT_ARGS[@]}")
         run "$label" "$dir" "$script" "${args[@]}"
     done
+    if [[ -n "$ABELL" ]]; then
+        run "fig:psf-leakage + corner" results psf_leakage.py --fits "$FITS" \
+            --abell3411 "$ABELL" --rpsf paper+off "${CUT_ARGS[@]}" --out "$OUTDIR/psf_leakage_distribution"
+    else
+        run "fig:psf-leakage" results psf_leakage.py --fits "$FITS" "${CUT_ARGS[@]}" --out "$OUTDIR/psf_leakage"
+        echo "  (no Abell 3411 catalog; skipping the paired PSF comparison)"
+    fi
 else
     echo "  (no --fits given; skipping the single-run deliverables)"
 fi

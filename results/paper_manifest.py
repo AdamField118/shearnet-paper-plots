@@ -1,6 +1,6 @@
 """Every float and every panel the paper needs, and what produces it.
 
-The current paper has five figures and three tables. Some are drawn from the
+The current paper has six figures and three tables. Some are drawn from the
 evaluation FITS, some from training logs, some are schematics with no data at
 all, and two tables were cut from the campaign. Without one list it is not
 possible to answer the only question that matters before submission -- is
@@ -61,13 +61,15 @@ class Item:
 #: main.tex -- it is the definition of "what the paper needs".
 MANIFEST = [
     Item("fig:d4", "static", "architecture/shearnet_d4_architecture_4plots.py", "architecture"),
-    Item("fig:psf-properties", "static", "psf/psf_properties.py", "observed PSF row only"),
+    Item("fig:psf-model", "external", None, "LITB III, published Figure C1"),
     Item("fig:response_snr", "fits", "results/response_vs_snr.py",
          "diagonal responses vs ngmix SNR, never cut"),
     Item("fig:unit-test-bias", "fits", "results/unit_test_bias.py",
          "m and c vs UT1--UT4, cut sample, R^S included"),
     Item("fig:psf-leakage", "fits", "results/psf_leakage.py",
          "calibrated noshear shapes, ngmix R^PSF-corrected, cut sample"),
+    Item("fig:psf-corner", "fits", "results/psf_leakage.py",
+         "PSF ellipticities in the fiducial and Abell 3411 leakage samples"),
     Item("tab:unit-tests", "static", None, "simulation definitions"),
     Item("tab:response-diag", "fits", "results/response_diagnostics.py",
          "mean R^gamma, R^S, R^PSF on the cut sample"),
@@ -83,6 +85,9 @@ MANIFEST = [
 #: a driver that runs every .py with --fits: two of them take different
 #: arguments entirely and would fail the run.
 NOT_DELIVERABLES = {
+    "psf/psf_properties.py": "exploratory PSF maps",
+    "results/psf_distribution.py": "PSF distribution plots",
+    "results/test_psf_distribution.py": "distribution plot tests",
     "results/paper_labels.py": "notation helper",
     "results/paper_colors.py": "shared estimator colors",
     "results/unit_test_bias_test.py": "bias-figure tests",
@@ -105,7 +110,7 @@ NOT_DELIVERABLES = {
 def _runs_present(root: Path):
     from catalog import find_run
 
-    return {name: find_run(root, name) for name in ("first", "second", "third", "fourth")}
+    return {name: find_run(root, name) for name in ("first", "second", "third", "fourth", "fourth_worstpsf")}
 
 
 def main(argv=None) -> int:

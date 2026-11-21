@@ -53,6 +53,10 @@ def test_collect_uses_the_shear_stats_estimator(tmp_path):
         np.testing.assert_allclose(result[est]["c2"], expected["c"][0])
         np.testing.assert_allclose(result[est]["c2_err"], expected["c"][1])
         assert result[est]["m1"] != result[est]["m1_without_RS"]
+        # the fixture injects R^PSF = rho * identity
+        from make_fixture import TRUTH
+        for key in ("Rpsf11", "Rpsf22"):
+            np.testing.assert_allclose(result[est][key], TRUTH[est]["rho"], atol=1e-9)
 
 
 def test_collect_records_the_other_rpsf_choice(tmp_path):

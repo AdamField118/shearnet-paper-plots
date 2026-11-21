@@ -164,3 +164,14 @@ def test_runs_alone_finds_the_fiducial_generation(tmp_path):
     result = _dry_run("--runs", str(tmp_path / "unit_tests"))
     assert result.returncode == 0, result.stderr
     assert f"--fits {generation / 'merged.fits'}" in result.stdout
+
+
+def test_paired_catalogs_use_three_curves_and_the_same_cut(tmp_path):
+    for name in ("fourth", "fourth_worstpsf"):
+        (tmp_path / f"{name}.fits").touch()
+    result = _dry_run("--runs", str(tmp_path), "--min-s2n", "15", cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+    line = next(line for line in result.stdout.splitlines() if "fig:psf-leakage" in line)
+    for arg in ("fourth.fits", "--abell3411", "fourth_worstpsf.fits", "--rpsf paper+off",
+                "--cut metacal --min-s2n 15", "/psf_leakage_distribution"):
+        assert arg in line

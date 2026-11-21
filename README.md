@@ -232,6 +232,7 @@ measurements only, so every response, cut and bias is formed here.
 | Figure 3, `fig:response_snr` | `response_vs_snr.py` | **never cut** |
 | Figure 4, `fig:unit-test-bias` | `unit_test_bias.py` | cut, `R = <R^gamma> + R^S` |
 | Figure 5, `fig:psf-leakage` | `psf_leakage.py` | cut, ring-complete objects; ngmix R^PSF-corrected |
+| Figure 6, `fig:psf-corner` | `psf_leakage.py --abell3411 FITS` | same rings as Figure 5, both fields |
 | `tab:timing` | `timing_table.py` | every observation; one stamp's inference and the metacal stamps' cost apart, then totals on a Perlmutter CPU node / one A100 with and without the stamps |
 
 **`catalog.py`** is the only module that knows the file layout; **`shear_stats.py`**
@@ -250,7 +251,16 @@ R^PSF-correct both estimators or neither (the legend then says which);
 `plot_psf_leakage_comparison` draws its two; `--rpsf both` draws each estimator
 with and without R^PSF (four curves). `--shape noshear` draws `g_noshear`
 with no response division and no R^PSF; `--shape raw` draws the uncorrected
-`g_original` of both instead.
+`g_original` of both instead. `--zero-intercept` fits alpha x through the origin
+(upstream's `slope_from_catalog(zero_intercept=True)`, which `make_panel` never
+passes, so a subclass sets it).
+
+**`leakage_bin_responses.py`** shows R^gamma_ii and R^PSF_ii (medians, with
+standard errors) in the leakage figure's own e^PSF bins and objects, and prints
+mean R^PSF_ii / R_ii: the leakage slope R^PSF predicts for the uncorrected shape.
+
+`unit_test_bias.json` carries R_22, R^S_22 and R^PSF_11, R^PSF_22 (each estimator's
+mean metacal PSF response on the selected sample) next to m and c.
 
 **`response_vs_snr.py`** bins in S/N quantiles: it prints each bin's edges,
 centre and object count and writes them to `*.bins.txt` next to the figure;
@@ -374,8 +384,8 @@ Figure 3 is never cut, because it is what motivates the cut. Its S/N axis is ngm
 
 **The shapes, and R^PSF.** Both estimators are calibrated the same way: the shape
 is `g_noshear` (the estimator on metacal's noshear image), divided by its own
-`R = <R^gamma> + R^S`. ngmix is also R^PSF-corrected; ShearNet, trained to be
-PSF-insensitive, need not be and is not (`PSF_CORRECTED` in `shear_stats.py`).
+`R = <R^gamma> + R^S`. The paper also applies PSF-response subtraction to ngmix; applying it to
+ShearNet increased its fiducial leakage, so the network is shown without it (`PSF_CORRECTED` in `shear_stats.py`).
 The bias figure's JSON records each estimator with the other choice too
 (`other_Rpsf`): the correction has to improve ngmix, and it shows what it would
 do to ShearNet. It has to be the noshear shape, because
@@ -398,3 +408,24 @@ and re-forms the whole statistic, `R^S` and the ratio included. So the
 shape/response covariance, the ±γ pairing and the correlation of rotated copies of a
 galaxy are carried, the same way for both estimators. Figure 5's slope errors are
 `PSFLeakagePanelMaker`'s own 30-sample jackknife.
+
+### PSF ellipticities in the leakage sample
+
+With both completed UT4 catalogs under `--runs` (named `fourth` and
+`fourth_worstpsf`), `run_all.sh` writes the two three-curve leakage figures
+and a joint comparison. To draw just these figures from explicit catalogs:
+
+```sh
+python results/psf_leakage.py --fits evaluations/fourth.fits \
+  --abell3411 evaluations/fourth_worstpsf.fits --rpsf paper+off \
+  --format pdf --out output/paper/psf_leakage_distribution
+```
+
+Copy `psf_leakage_distribution.pdf`, `worstpsf/psf_leakage_distribution.pdf`,
+and `psf_ellipticity_corner.pdf` from the output directory to the corresponding
+paths under the manuscript's `figures/`. Each zero-shear catalog row contributes
+one PSF pair after every ring orientation has passed the common leakage selection.
+The gray histogram in each leakage panel is scaled to its own peak; it has no
+shear units. The paired corner plot uses common bins and divides each field's
+counts by its own sample size. Its Pearson coefficients describe these selected
+evaluation samples, not the training catalogs or independent draws from the sky.

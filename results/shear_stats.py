@@ -368,6 +368,8 @@ def shear_bias(sample: Sample, est: str, njack: int = DEFAULT_NJACK,
             # c is divided by the other diagonal
             "R_bb": 0.5 * (R[p, b, b] + R[q, b, b]),
             "RS_bb": 0.5 * (c["RS"][p, b, b] + c["RS"][q, b, b]),
+            "Rpsf_aa": 0.5 * (c["Rp"][p, a, a] + c["Rp"][q, a, a]),
+            "Rpsf_bb": 0.5 * (c["Rp"][p, b, b] + c["Rp"][q, b, b]),
         }
 
     out = blocks.estimate(fn)
@@ -421,11 +423,13 @@ def leakage_inputs(sample: Sample, est: str, scene: str = "zero",
     e_ring = shape[:, keep].mean(axis=0)
     gpsf = sample.psf_g[i][:, keep].mean(axis=0)
     rpsf = sample.r_psf[est][i][:, keep].mean(axis=0)
+    rgamma = sample.r_gamma[est][i][:, keep].mean(axis=0)
     finite = np.isfinite(e_ring).all(axis=1)
     return {
         "e1_gal": e_ring[finite, 0], "e2_gal": e_ring[finite, 1],
         "e1_psf": gpsf[finite, 0], "e2_psf": gpsf[finite, 1],
         "r11_psf": rpsf[finite, 0, 0], "r22_psf": rpsf[finite, 1, 1],
+        "r11_gamma": rgamma[finite, 0, 0], "r22_gamma": rgamma[finite, 1, 1],
         "n_objects": int(finite.sum()), "n_total": int(keep.size),
     }
 

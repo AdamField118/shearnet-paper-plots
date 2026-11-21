@@ -12,8 +12,8 @@ drawing are all done by ``superbit_lensing``:
     superbit_lensing.plotter.save_all_panels_to_fits  panel-data FITS
     superbit_lensing.plotter.plot_psf_leakage_comparison  the figure
 
-This module only pulls the right columns out of the ShearNet evaluation FITS and
-hands them over. Every shape is ring-averaged, because the ring average cancels
+The gray background shows the PSF ellipticities of the galaxies in the fit.
+Given a second UT4 catalog, we also compare the joint ellipticity distributions. Every shape is ring-averaged, because the ring average cancels
 intrinsic ellipticity while leaving the leakage signal.
 
 THE SHAPE AND THE SAMPLE
@@ -33,6 +33,11 @@ instead of the paper's choice (``--rpsf paper``: ngmix only); the labels then
 say which. ``--rpsf paper+off`` draws the paper's curves and, as a third curve,
 each estimator the paper R^PSF-corrects (ngmix) without the correction.
 ``--rpsf both`` draws every estimator both with and without it (four curves).
+
+``--zero-intercept`` fits alpha x with no intercept (upstream's
+``slope_from_catalog(zero_intercept=True)``, which ``make_panel`` never passes,
+so a subclass sets it). The binned medians have the global mean subtracted, so
+the forced line goes through (e^PSF = 0, global mean), not (<e^PSF>, global mean).
 
 ``--shape noshear`` is the calibrated shape before any calibration: ``g_noshear``
 with no response division and no R^PSF. ``--shape raw`` restores the previous
@@ -67,6 +72,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from catalog import DISPLAY_NAME, Catalog  # noqa: E402
+from psf_distribution import add_histograms, corner_comparison
 from paper_labels import label_psf_leakage  # noqa: E402
 from shear_stats import (PSF_CORRECTED, Sample, calibrated_leakage_inputs,  # noqa: E402
                          cut_from_name, leakage_inputs)
@@ -108,7 +114,7 @@ def _import_superbit():
 
 
 def panel_fits_for(data, out_fits, *, nbin=10, min_count=20, njac=30,
-                   correct_psf_leakage=False):
+                   correct_psf_leakage=False, zero_intercept=False):
     """Build superbit panel data from :func:`shear_stats.leakage_inputs` and
     write its panel FITS.
 
@@ -116,8 +122,16 @@ def panel_fits_for(data, out_fits, *, nbin=10, min_count=20, njac=30,
     the paper quotes.
     """
     PSFLeakagePanelMaker, save_all_panels_to_fits, _ = _import_superbit()
+    maker_class = PSFLeakagePanelMaker
+    if zero_intercept:
+        class maker_class(PSFLeakagePanelMaker):  # noqa: N801
+            """Every fit, the full one and each jackknife one, through the origin."""
 
-    maker = PSFLeakagePanelMaker(
+            def slope_from_catalog(self, *args, **kwargs):
+                kwargs["zero_intercept"] = True
+                return super().slope_from_catalog(*args, **kwargs)
+
+    maker = maker_class(
         e1_gal=data["e1_gal"],
         e2_gal=data["e2_gal"],
         e1_psf=data["e1_psf"],
@@ -175,13 +189,14 @@ def add_leakage_curve(fig, panel_fits, label, *, color, marker, ls):
                     label=rf"{label}: $\alpha_{i}={alpha:.3f}\ ({abs(alpha) / err:.2f}\sigma)$")
         xx = np.linspace(x.min(), x.max(), 1000)
         ax.plot(xx, alpha * xx + beta, color=color, lw=2.2, ls=ls)
-        ax.legend(frameon=False, borderpad=0.8, handlelength=2.5)
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
+    p.add_argument("--abell3411", metavar="FITS", help="also plot Abell 3411 under worstpsf/ "
+                   "and compare the two selected PSF populations in psf_ellipticity_corner")
     p.add_argument("--fits", required=True, help="shearnet-eval catalog")
     p.add_argument(
         "--estimators", nargs=2, default=["shearnet", "ngmix"], metavar=("A", "B"),
@@ -202,6 +217,8 @@ def main(argv=None):
     p.add_argument("--shape", choices=SHAPES, default="calibrated",
                    help="calibrated (default): noshear - R^PSF e^PSF over R. "
                         "noshear: g_noshear, no R, no R^PSF. raw: g_original, uncorrected.")
+    p.add_argument("--zero-intercept", action="store_true",
+                   help="fit alpha x through the origin (upstream's zero_intercept)")
     p.add_argument(
         "--panel-dir", default=None,
         help="keep the intermediate per-estimator panel FITS here",
@@ -214,7 +231,34 @@ def main(argv=None):
     if args.rpsf in ("paper+off", "both") and args.shape != "calibrated":
         p.error(f"--rpsf {args.rpsf} needs --shape calibrated")
 
-    catalog = Catalog(args.fits)
+    stem = (Path(args.out) if args.out else
+            Path(__file__).resolve().parents[1] / "figures" / "psf_leakage")
+    if args.abell3411:
+        if not Path(args.abell3411).is_file():
+            p.error(f"Abell 3411 catalog not found: {args.abell3411}")
+        if Path(args.fits).is_file() and Path(args.fits).samefile(args.abell3411):
+            p.error("provide distinct fiducial and Abell 3411 catalogs")
+    with Catalog(args.fits) as catalog:
+        fiducial = _draw_catalog(catalog, args, stem, args.panel_dir)
+    if args.abell3411:
+        with Catalog(args.abell3411) as catalog:
+            panel_dir = Path(args.panel_dir) / "worstpsf" if args.panel_dir else None
+            abell = _draw_catalog(catalog, args, stem.parent / "worstpsf" / stem.name, panel_dir)
+        with plt.rc_context({"font.size": 10, "axes.labelsize": 11, "xtick.labelsize": 9,
+                             "ytick.labelsize": 9}):
+            fig = corner_comparison(fiducial, abell)
+            _save(fig, stem.parent / "psf_ellipticity_corner", args)
+
+
+def _save(fig, stem, args):
+    for fmt in args.format:
+        path = stem.with_suffix(f".{fmt}")
+        fig.savefig(path, dpi=args.dpi, bbox_inches="tight")
+        print(f"wrote {path}")
+    plt.close(fig)
+
+
+def _draw_catalog(catalog, args, stem, panel_dir):
     print(catalog)
     cut = cut_from_name(args.cut, args.min_t_ratio, args.min_s2n)
     print(f"cut: {cut.describe() if cut else 'none'}")
@@ -224,7 +268,7 @@ def main(argv=None):
     _, _, plot_psf_leakage_comparison = _import_superbit()
 
     tmp = None
-    panel_dir = Path(args.panel_dir) if args.panel_dir else None
+    panel_dir = Path(panel_dir) if panel_dir else None
     if panel_dir is None:
         tmp = tempfile.TemporaryDirectory()
         panel_dir = Path(tmp.name)
@@ -240,6 +284,7 @@ def main(argv=None):
 
     try:
         panel_files, labels = [], []
+        pairs = None
         for estimator, override in curves:
             if args.shape == "calibrated":
                 data = calibrated_leakage_inputs(sample, estimator, scene="zero",
@@ -248,12 +293,20 @@ def main(argv=None):
                 variant = UNCALIBRATED_VARIANT[args.shape]
                 data = leakage_inputs(sample, estimator, scene="zero", variant=variant)
                 data.update(correct_psf_leakage=False, shape=f"g_{variant}, uncalibrated")
+            current = np.column_stack((data["e1_psf"], data["e2_psf"]))
+            if not len(current):
+                raise ValueError("No complete rings pass the leakage selection")
+            if pairs is None:
+                pairs = current
+            elif not np.array_equal(current, pairs):
+                raise ValueError("Leakage curves have different PSF samples")
             tag = "" if override is None else ("_rpsf" if override else "_norpsf")
             out_fits = panel_dir / f"panels_{estimator}{tag}.fits"
             a1, a1e, a2, a2e = panel_fits_for(
                 data, out_fits, nbin=args.nbin, min_count=args.min_count, njac=args.njac,
-                correct_psf_leakage=data["correct_psf_leakage"])
-            r_note = (f", R = ({data['R'][0]:.4f}, {data['R'][1]:.4f})"
+                correct_psf_leakage=data["correct_psf_leakage"],
+                zero_intercept=args.zero_intercept)
+            r_note =(f", R = ({data['R'][0]:.4f}, {data['R'][1]:.4f})"
                       if "R" in data else "")
             print(f"  {DISPLAY_NAME.get(estimator, estimator)} [{data['shape']}"
                   f"{', R^PSF-corrected' if data['correct_psf_leakage'] else ''}{r_note}, "
@@ -268,9 +321,6 @@ def main(argv=None):
                           else r" (no $R^{\rm PSF}$)")
             labels.append(label)
 
-        stem = Path(args.out) if args.out else (
-            Path(__file__).resolve().parent.parent / "figures" / "psf_leakage"
-        )
         stem.parent.mkdir(parents=True, exist_ok=True)
 
         plot_psf_leakage_comparison(
@@ -287,11 +337,12 @@ def main(argv=None):
         for panel_file, label, (estimator, _) in zip(panel_files[2:], labels[2:], curves[2:]):
             add_leakage_curve(fig, panel_file, label, **EXTRA_STYLE[estimator])
         label_psf_leakage(fig, shapes=[LABEL_SHAPE[args.shape]] * len(chosen))
-        for fmt in args.format:
-            path = stem.with_suffix(f".{fmt}")
-            fig.savefig(path, dpi=args.dpi, bbox_inches="tight")
-            print(f"wrote {path}")
-        plt.close(fig)
+        add_histograms(fig.axes, pairs)
+        for ax in fig.axes:
+            ax.legend(loc="lower center", bbox_to_anchor=(.5, 1.01), frameon=False,
+                      fontsize=14, borderaxespad=0, labelspacing=.15, handlelength=2)
+        _save(fig, stem, args)
+        return pairs
     finally:
         if tmp is not None:
             tmp.cleanup()
