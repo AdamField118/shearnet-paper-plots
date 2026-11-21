@@ -19,8 +19,7 @@ Layout, as far as these scripts care:
   as rendered, ``_noshear``, ``_1p`` ... ``_2m_psf`` are ngmix's metacal products,
   and ShearNet is run on the very images ngmix fitted.
 
-Columns are read through a memory map and only for the scenes asked for, so
-reading the ``g1`` pair out of a 6 GB file reads 2/5 of the rows it needs.
+CFITSIO reads only the requested scenes and columns, in bounded row batches.
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence
 
 import numpy as np
-from astropy.io import fits
+import fitsio
 
 SCHEMA = "shearnet-eval"
 SCHEMA_VERSION = 2
@@ -47,14 +46,21 @@ class CatalogError(ValueError):
 
 
 class Catalog:
-    """Lazy, memory-mapped access to one evaluation catalog."""
+    """Read selected rows without mapping an entire evaluation catalog."""
 
     def __init__(self, path):
         self.path = Path(path).expanduser()
         if not self.path.is_file():
             raise FileNotFoundError(f"evaluation catalog not found: {self.path}")
-        self._hdul = fits.open(self.path, memmap=True)
-        self.header = self._hdul[0].header
+        self._hdul = fitsio.FITS(str(self.path))
+        try:
+            self._read_layout()
+        except Exception:
+            self.close()
+            raise
+
+    def _read_layout(self):
+        self.header = self._hdul[0].read_header()
         schema = self.header.get("SCHEMA")
         if schema != SCHEMA:
             raise CatalogError(
@@ -65,14 +71,14 @@ class Catalog:
             raise CatalogError(f"{self.path.name} is schema version "
                                f"{self.header.get('SCHEMAV')}, these scripts read "
                                f"{SCHEMA_VERSION}")
-        self.hdu_names = [h.name for h in self._hdul]
+        self.hdu_names = [h.get_extname() or "PRIMARY" for h in self._hdul]
 
-        scenes = self._hdul["SCENES"].data
+        scenes = self._hdul["SCENES"].read()
         self.scenes: Dict[str, dict] = {
             str(name).strip(): {"id": int(i), "g1": float(g1), "g2": float(g2)}
             for i, name, g1, g2 in zip(scenes["scene_id"], scenes["name"],
                                        scenes["g1"], scenes["g2"])}
-        self.rotations_deg = np.asarray(self._hdul["ROTATIONS"].data["rotation_deg"],
+        self.rotations_deg = np.asarray(self._hdul["ROTATIONS"].read_column("rotation_deg"),
                                         dtype=float)
         self.n_scenes = len(self.scenes)
         self.n_rotations = len(self.rotations_deg)
@@ -93,21 +99,24 @@ class Catalog:
         """
         nrecord = int(self.header["NRECORD"])
         rows = np.unique(np.linspace(0, nrecord - 1, 2001).astype(int))
+        keys = ["record_id", "object_uid", "observation_uid"]
+        truth = None
         for table in ("TRUTH", "STAMP", "SHEARNET", "NGMIX"):
-            if table not in self.hdu_names:
+            if table not in self.hdu_names and table != "TRUTH":
                 continue
-            data = self._hdul[table].data
-            if len(data) != nrecord:
-                raise CatalogError(f"{table} has {len(data)} rows, NRECORD={nrecord}")
-            rid = np.asarray(data[rows]["record_id"])
-            if not np.array_equal(rid, rows):
-                raise CatalogError(f"{table}.record_id is not 0..NRECORD-1 in order")
-            for key in ("object_uid", "observation_uid"):
-                if key not in data.names:
+            hdu = self._hdul[table]
+            if hdu.get_nrows() != nrecord:
+                raise CatalogError(f"{table} has {hdu.get_nrows()} rows, NRECORD={nrecord}")
+            for key in keys:
+                if key not in hdu.get_colnames():
                     raise CatalogError(f"{table} is missing {key}")
-                values = np.asarray(data[rows][key])
-                reference = np.asarray(self._hdul["TRUTH"].data[rows][key])
-                if np.any(values == "") or not np.array_equal(values, reference):
+            sampled = hdu.read(columns=keys, rows=rows)
+            if not np.array_equal(sampled["record_id"], rows):
+                raise CatalogError(f"{table}.record_id is not 0..NRECORD-1 in order")
+            if table == "TRUTH":
+                truth = sampled
+            for key in keys[1:]:
+                if np.any(sampled[key] == "") or not np.array_equal(sampled[key], truth[key]):
                     raise CatalogError(f"{table}.{key} disagrees with TRUTH")
         for key in ("input_fingerprint", "metacal_fingerprint"):
             if not self.has("STAMP", key):
@@ -130,7 +139,7 @@ class Catalog:
     def has(self, table: str, column: Optional[str] = None) -> bool:
         if table not in self.hdu_names:
             return False
-        return column is None or column in self._hdul[table].columns.names
+        return column is None or column in self._hdul[table].get_colnames()
 
     def scene_ids(self, names: Iterable[str]) -> list:
         missing = [n for n in names if n not in self.scenes]
@@ -139,14 +148,14 @@ class Catalog:
                                f"{sorted(self.scenes)}")
         return [self.scenes[n]["id"] for n in names]
 
-    def columns(self, table: str, names: Iterable[str], scenes: Sequence[str]) -> dict:
+    def columns(self, table: str, names: Iterable[str], scenes: Sequence[str],
+                objects: slice = slice(None)) -> dict:
         """``{name: array}`` for several columns of ``table``, each shaped
         ``(scene, station, object, ...)``, native-endian.
 
-        A FITS table is stored row by row, so reading one column of a scene
-        reads every byte of that scene. This reads each scene's rows ONCE, in a
-        single sequential pass, takes every requested column from them and lets
-        them go, so the peak is one scene of one table.
+        Read short consecutive runs of FITS rows before gathering their columns.
+        An object slice selects the same catalog rows at every ring station.
+        Only the requested columns survive each read.
         """
         names = list(dict.fromkeys(names))
         if not self.has(table):
@@ -155,20 +164,24 @@ class Catalog:
         missing = [n for n in names if not self.has(table, n)]
         if missing:
             raise CatalogError(f"{table} has no column(s) {missing}")
-        per_scene = self.n_rotations * self.n_objects
-        hdu = self._hdul[table]
-        blocks = {name: [] for name in names}
-        for sid in self.scene_ids(scenes):
-            rows = np.array(hdu.data[sid * per_scene:(sid + 1) * per_scene], copy=True)
-            for name in names:
-                values = rows[name]
-                blocks[name].append(values.astype(values.dtype.newbyteorder("=")))
-            del rows
+        start, stop, step = objects.indices(self.n_objects)
+        if step != 1 or stop <= start:
+            raise ValueError("expected a nonempty contiguous range of objects")
+        data = self._hdul[table]
+        ids = self.scene_ids(scenes)
         out = {}
-        for name, parts in blocks.items():
-            stacked = np.stack(parts)
-            out[name] = stacked.reshape((len(parts), self.n_rotations, self.n_objects)
-                                        + stacked.shape[2:])
+        for si, sid in enumerate(ids):
+            for rot in range(self.n_rotations):
+                origin = (sid * self.n_rotations + rot) * self.n_objects
+                for lo in range(start, stop, 4096):
+                    hi = min(lo + 4096, stop)
+                    rows = data.read(columns=names, rows=np.arange(origin + lo, origin + hi))
+                    for name in names:
+                        v = rows[name]
+                        if name not in out:
+                            shape = (len(ids), self.n_rotations, stop - start) + v.shape[1:]
+                            out[name] = np.empty(shape, dtype=v.dtype.newbyteorder("="))
+                        out[name][si, rot, lo - start:hi - start] = v
         return out
 
     def key_values(self, table: str) -> dict:
@@ -177,7 +190,8 @@ class Catalog:
         if not self.has(table):
             raise CatalogError(f"{self.path.name} has no {table} table")
         out = {}
-        for key, value in zip(self._hdul[table].data["key"], self._hdul[table].data["value"]):
+        for row in self._hdul[table].read(columns=["key", "value"]):
+            key, value = row["key"], row["value"]
             try:
                 out[str(key)] = json.loads(value)
             except ValueError:

@@ -49,7 +49,7 @@ Options:
   --min-s2n X           s2n threshold of the metacal cut (default 10)
   -h, --help            this
 
-Figure 2 reproduces published Figure C1 of LITB III. The paired leakage
+Figure 2 is drawn separately with psf/psf_em5.py --config fourth_worstpsf.yaml. The paired leakage
 plots and PSF ellipticity corner plot require both UT4 catalogs.
 USAGE
 }

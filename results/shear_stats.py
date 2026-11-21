@@ -179,7 +179,7 @@ class Sample:
 
     def __init__(self, cat: Catalog, scenes: Sequence[str],
                  cut: Optional[SelectionCut] = PAPER_CUT,
-                 estimators: Sequence[str] = ESTIMATORS):
+                 estimators: Sequence[str] = ESTIMATORS, *, objects: slice = slice(None)):
         self.cat = cat
         self.scenes = list(scenes)
         self.cut = cut
@@ -194,11 +194,11 @@ class Sample:
         for mtype in SELECTION_TYPES:
             wanted["NGMIX"] |= set(_cut_columns(mtype))
         wanted["STAMP"] |= {"psf_g", "psf_T_admom"}
-        cols = {table: cat.columns(table, sorted(names), self.scenes)
+        cols = {table: cat.columns(table, sorted(names), self.scenes, objects=objects)
                 for table, names in wanted.items() if names}
 
         self.shape, self.g, self.r_gamma, self.r_psf = {}, {}, {}, {}
-        valid = np.ones((len(self.scenes), cat.n_rotations, cat.n_objects), dtype=bool)
+        valid = np.ones(cols["STAMP"]["psf_T_admom"].shape, dtype=bool)
         for est in self.estimators:
             c = cols[TABLE[est]]
             variant = SHAPE_VARIANT[est]

@@ -173,15 +173,18 @@ pixels of each displayed stamp, so they read like that figure's star and PSFEx
 panels. Values below the floor, including the galaxy's negative noise pixels,
 appear navy. The PSF input is rendered from PSFEx, corresponding to C1's middle panel.
 
-`tools/recolor_litb3_c3.py` gives that LITB III figure itself the same
-navy–gray–gold map. Its input FITS is not in LITB-III-plots, so the script swaps
-the inferno palette of the published PDF for `signed_cmap()` index for index,
-which is what the notebook would draw with that colour map:
+For Figure 2, render the Abell 3411 PSF from the same configuration as the
+elongated-PSF test and fit its pixels with ngmix EM5:
 
 ```bash
-python tools/recolor_litb3_c3.py --pdf star_to_psfs_to_ngmix_images.pdf \
-    --out figures/litb3_c3_star_psfex_em5.pdf
+python psf/psf_em5.py --config ../ShearNet/configs/paper/unit_tests/fourth_worstpsf.yaml
 ```
+
+The output is `output/paper/psf_em5.pdf`. The first two panels use one log
+scale. The third shows the signed residual on a symmetric linear scale;
+a PSFEx file contains no observed star cutout. Only the displayed intensities
+are clipped. The script uses the same navy-to-gold map as the architecture
+stamps, with increasing brightness in grayscale.
 
 The previous Matplotlib version is in `architecture/shearnet_d4_architecture_4plots.py`.
 
@@ -240,15 +243,15 @@ is the only one that forms a statistic. See "The cut, the shapes and the errors"
 below.
 
 **`psf_leakage.py`** — median centred calibrated shape against PSF ellipticity,
-with the fitted leakage slope α per estimator. The binning, the jackknife α/β fit,
-the R^PSF correction and the drawing are `superbit_lensing`'s
-(`PSFLeakagePanelMaker`, `save_all_panels_to_fits`, `plot_psf_leakage_comparison`);
-this script only selects the objects and columns, ring-averaged over the unsheared
-population: each estimator's `g_noshear` divided by its own `R = <R^gamma> + R^S`,
-with `correct_psf_leakage=True` for ngmix only. `--rpsf on` / `--rpsf off`
-R^PSF-correct both estimators or neither (the legend then says which);
-`--rpsf paper+off` adds ngmix without R^PSF as a third curve, drawn the way
-`plot_psf_leakage_comparison` draws its two; `--rpsf both` draws each estimator
+with a fitted leakage slope α per estimator. SuperBIT's `PSFLeakagePanelMaker`
+computes the bin medians, jackknife fits, and PSF-response subtraction. The input
+is each estimator's ring-averaged `g_noshear` divided by its own
+`R = <R^gamma> + R^S`. The paper subtracts R^PSF for ngmix only.
+`--rpsf on` / `--rpsf off` applies the subtraction to both estimators or neither.
+With `--rpsf paper+off`, each component panel shows ShearNet and ngmix before
+and after PSF-response subtraction on the same linear shear axis. The axes
+include all bin measurements and their error bars. PSF histograms are clipped to that window;
+Figure 6 shows the full distributions. `--rpsf both` draws each estimator
 with and without R^PSF (four curves). `--shape noshear` draws `g_noshear`
 with no response division and no R^PSF; `--shape raw` draws the uncorrected
 `g_original` of both instead. `--zero-intercept` fits alpha x through the origin
@@ -429,3 +432,13 @@ The gray histogram in each leakage panel is scaled to its own peak; it has no
 shear units. The paired corner plot uses common bins and divides each field's
 counts by its own sample size. Its Pearson coefficients describe these selected
 evaluation samples, not the training catalogs or independent draws from the sky.
+
+To regenerate **only** the corner plot after both leakage PDFs have been written,
+use the same catalogs and selection as the leakage fits:
+
+```bash
+python results/psf_corner.py --runs ../ShearNet/runs/unit_tests --out output/paper/psf_ellipticity_corner.pdf
+```
+
+This reads the zero-shear sample in batches with `fitsio` (included in the plotting environment) without rerunning any fits. Empty corner bins are white; higher densities darken from pale gold to navy. The full
+driver also releases each field's fit process before starting the next.

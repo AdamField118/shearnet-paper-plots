@@ -61,7 +61,7 @@ class Item:
 #: main.tex -- it is the definition of "what the paper needs".
 MANIFEST = [
     Item("fig:d4", "static", "architecture/shearnet_d4_architecture_4plots.py", "architecture"),
-    Item("fig:psf-model", "external", None, "LITB III, published Figure C1"),
+    Item("fig:psf-model", "static", "psf/psf_em5.py", "local PSFEx model, EM5 fit and residual"),
     Item("fig:response_snr", "fits", "results/response_vs_snr.py",
          "diagonal responses vs ngmix SNR, never cut"),
     Item("fig:unit-test-bias", "fits", "results/unit_test_bias.py",
@@ -86,6 +86,7 @@ MANIFEST = [
 #: arguments entirely and would fail the run.
 NOT_DELIVERABLES = {
     "psf/psf_properties.py": "exploratory PSF maps",
+    "results/psf_corner.py": "standalone, batched corner plot",
     "results/psf_distribution.py": "PSF distribution plots",
     "results/test_psf_distribution.py": "distribution plot tests",
     "results/paper_labels.py": "notation helper",

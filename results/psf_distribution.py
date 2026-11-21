@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import numpy as np
 
+from paper_colors import signed_cmap
+
 LABELS = (r"$e^{\rm PSF}_1$", r"$e^{\rm PSF}_2$")
 
 
@@ -16,17 +18,17 @@ def _edges(values, bins):
     return np.linspace(lo, hi, bins + 1)
 
 
+def draw_histogram(ax, counts, edges):
+    """Keep the full binned sample, clipping the backdrop to the measured shear axes."""
+    xlim, ylim = ax.get_xlim(), ax.get_ylim()
+    ax.stairs(.70 * counts / counts.max(), edges, fill=True,
+              transform=ax.get_xaxis_transform(), color=".88", lw=0, zorder=-1)
+    ax.set(xlim=xlim, ylim=ylim)
+
+
 def add_histograms(axes, pairs, bins=40):
-    """Show the full PSF sample; histogram height is in axes, not shear, units."""
     for ax, values in zip(axes, pairs.T):
-        counts, edges = np.histogram(values, bins=_edges(values, bins))
-        ylim = ax.get_ylim()
-        ax.stairs(.60 * counts / counts.max(), edges, fill=True,
-                  transform=ax.get_xaxis_transform(), color="0.88", lw=0, zorder=-1)
-        # Include the tails even if upstream fitted only the percentile-bin centres.
-        xmin, xmax = ax.get_xlim()
-        ax.set_xlim(min(xmin, edges[0]), max(xmax, edges[-1]))
-        ax.set_ylim(ylim)
+        draw_histogram(ax, *np.histogram(values, bins=_edges(values, bins)))
 
 
 def corner_comparison(fiducial, abell, bins=48):
@@ -40,12 +42,14 @@ def corner_comparison(fiducial, abell, bins=48):
     positive = np.concatenate([h[h > 0] for h in mass])
     norm = LogNorm(positive.min(), max(positive.max(), positive.min() * 1.01))
     marginal_max = max(h.sum(axis=i).max() for h in mass for i in (0, 1))
+    # On white paper, increasing density should add ink: empty bins stay white.
+    density_cmap = signed_cmap().reversed()
     fig, joints = plt.subplots(1, 2, figsize=(8.1, 4.3))
     fig.subplots_adjust(left=.09, right=.89, bottom=.29, top=.77, wspace=.60)
     for ax, pairs, h, label in zip(joints, samples, mass, ("Fiducial", "Abell 3411")):
         top = ax.inset_axes([0, 1.015, 1, .23])
         side = ax.inset_axes([1.015, 0, .23, 1])
-        mesh = ax.pcolormesh(edges, edges, np.ma.masked_equal(h.T, 0), cmap="cividis",
+        mesh = ax.pcolormesh(edges, edges, np.ma.masked_equal(h.T, 0), cmap=density_cmap,
                              norm=norm, rasterized=True)
         # Match scales in both coordinates and align the marginals to the joint panel.
         ax.set(xlabel=LABELS[0], ylabel=LABELS[1], xlim=(edges[0], edges[-1]),

@@ -5,12 +5,11 @@ binned in e^PSF. Labels distinguish ellipticity from response-corrected shear un
 The global mean is subtracted before binning. The fitted
 slope is the leakage coefficient alpha; an ideal estimator is flat.
 
-Per the repository house rule, the binning, the jackknife alpha/beta fit and the
-drawing are all done by ``superbit_lensing``:
+All bin measurements and jackknife fits come from ``superbit_lensing``:
 
     superbit_lensing.plotter.PSFLeakagePanelMaker   binning + jackknife fit
     superbit_lensing.plotter.save_all_panels_to_fits  panel-data FITS
-    superbit_lensing.plotter.plot_psf_leakage_comparison  the figure
+    superbit_lensing.plotter.plot_psf_leakage_comparison  single-row comparisons
 
 The gray background shows the PSF ellipticities of the galaxies in the fit.
 Given a second UT4 catalog, we also compare the joint ellipticity distributions. Every shape is ring-averaged, because the ring average cancels
@@ -30,8 +29,8 @@ percentile bin, LITB III Appendix D).
 
 ``--rpsf on`` / ``--rpsf off`` R^PSF-correct both estimators or neither,
 instead of the paper's choice (``--rpsf paper``: ngmix only); the labels then
-say which. ``--rpsf paper+off`` draws the paper's curves and, as a third curve,
-each estimator the paper R^PSF-corrects (ngmix) without the correction.
+say which. ``--rpsf paper+off`` overlays the two adopted measurements and ngmix
+without PSF-response subtraction on the same axes.
 ``--rpsf both`` draws every estimator both with and without it (four curves).
 
 ``--zero-intercept`` fits alpha x with no intercept (upstream's
@@ -238,16 +237,30 @@ def main(argv=None):
             p.error(f"Abell 3411 catalog not found: {args.abell3411}")
         if Path(args.fits).is_file() and Path(args.fits).samefile(args.abell3411):
             p.error("provide distinct fiducial and Abell 3411 catalogs")
-    with Catalog(args.fits) as catalog:
-        fiducial = _draw_catalog(catalog, args, stem, args.panel_dir)
-    if args.abell3411:
-        with Catalog(args.abell3411) as catalog:
-            panel_dir = Path(args.panel_dir) / "worstpsf" if args.panel_dir else None
-            abell = _draw_catalog(catalog, args, stem.parent / "worstpsf" / stem.name, panel_dir)
-        with plt.rc_context({"font.size": 10, "axes.labelsize": 11, "xtick.labelsize": 9,
-                             "ytick.labelsize": 9}):
-            fig = corner_comparison(fiducial, abell)
-            _save(fig, stem.parent / "psf_ellipticity_corner", args)
+    if not args.abell3411:
+        _plot_field(args.fits, args, stem, args.panel_dir)
+        return
+
+    # All catalog arrays and the fit/plot workspaces die with their worker.
+    # The parent receives only the two ellipticity columns (about 1.5 MiB/field).
+    from concurrent.futures import ProcessPoolExecutor
+    from multiprocessing import get_context
+
+    fields = ((args.fits, stem, args.panel_dir),
+              (args.abell3411, stem.parent / "worstpsf" / stem.name,
+               Path(args.panel_dir) / "worstpsf" if args.panel_dir else None))
+    samples = []
+    for path, out, panels in fields:
+        with ProcessPoolExecutor(max_workers=1, mp_context=get_context("spawn")) as worker:
+            samples.append(worker.submit(_plot_field, path, args, out, panels).result())
+    with plt.rc_context({"font.size": 10, "axes.labelsize": 11, "xtick.labelsize": 9,
+                         "ytick.labelsize": 9}):
+        _save(corner_comparison(*samples), stem.parent / "psf_ellipticity_corner", args)
+
+
+def _plot_field(path, args, stem, panel_dir):
+    with Catalog(path) as catalog:
+        return _draw_catalog(catalog, args, stem, panel_dir)
 
 
 def _save(fig, stem, args):
@@ -322,6 +335,14 @@ def _draw_catalog(catalog, args, stem, panel_dir):
             labels.append(label)
 
         stem.parent.mkdir(parents=True, exist_ok=True)
+
+        if args.rpsf == "paper+off":
+            from leakage_figure import paper_comparison, read_component
+            components = [[read_component(path, i) for path in panel_files] for i in (1, 2)]
+            histograms = [np.histogram(values, bins=40) for values in pairs.T]
+            fig = paper_comparison(components, histograms, [est for est, _ in curves])
+            _save(fig, stem, args)
+            return pairs
 
         plot_psf_leakage_comparison(
             str(panel_files[0]), str(panel_files[1]),
