@@ -235,7 +235,7 @@ measurements only, so every response, cut and bias is formed here.
 | Figure 3, `fig:response_snr` | `response_vs_snr.py` | **never cut** |
 | Figure 4, `fig:unit-test-bias` | `unit_test_bias.py` | cut, `R = <R^gamma> + R^S` |
 | Figure 5, `fig:psf-leakage` | `psf_leakage.py` | cut, ring-complete objects; ngmix R^PSF-corrected |
-| Figure 6, `fig:psf-corner` | `psf_leakage.py --abell3411 FITS` | same rings as Figure 5, both fields |
+| Figure 6, `fig:flux-hlr-residuals` | `flux_hlr_residuals.py` | matched original stamps, fiducial zero-shear scene, noshear cuts |
 | `tab:timing` | `timing_table.py` | every observation; one stamp's inference and the metacal stamps' cost apart, then totals on a Perlmutter CPU node / one A100 with and without the stamps |
 
 **`catalog.py`** is the only module that knows the file layout; **`shear_stats.py`**
@@ -250,8 +250,7 @@ is each estimator's ring-averaged `g_noshear` divided by its own
 `--rpsf on` / `--rpsf off` applies the subtraction to both estimators or neither.
 With `--rpsf paper+off`, each component panel shows ShearNet and ngmix before
 and after PSF-response subtraction on the same linear shear axis. The axes
-include all bin measurements and their error bars. PSF histograms are clipped to that window;
-Figure 6 shows the full distributions. `--rpsf both` draws each estimator
+include all bin measurements and their error bars. PSF histograms are clipped to that window. `--rpsf both` draws each estimator
 with and without R^PSF (four curves). `--shape noshear` draws `g_noshear`
 with no response division and no R^PSF; `--shape raw` draws the uncorrected
 `g_original` of both instead. `--zero-intercept` fits alpha x through the origin
@@ -412,11 +411,28 @@ shape/response covariance, the ±γ pairing and the correlation of rotated copie
 galaxy are carried, the same way for both estimators. Figure 5's slope errors are
 `PSFLeakagePanelMaker`'s own 30-sample jackknife.
 
+### Flux and half-light radius (Figure 6)
+
+To generate just the residual figure from fiducial UT4:
+
+```bash
+python results/flux_hlr_residuals.py --runs ~/weak_lensing/ShearNet/runs/unit_tests \
+  --out output/paper/flux_hlr_residuals.pdf
+```
+
+Each point entering the histograms is one zero-shear stamp that passes the
+shared noshear cuts and has usable measurements for both estimators. Flux is
+compared with the injected total counts; radius is compared with the injected
+circularized half-light radius in arcsec. For ngmix this is the equal-area
+half-light radius of the fitted Gaussian, not its major-axis radius or its RMS
+width. The median absolute fractional errors include the histogram tails. Copy both
+`flux_hlr_residuals.pdf` and `flux_hlr_residuals.tex` into the paper's `figures/`
+directory; the TeX fragment quotes the measured flux errors in the text.
+
 ### PSF ellipticities in the leakage sample
 
 With both completed UT4 catalogs under `--runs` (named `fourth` and
-`fourth_worstpsf`), `run_all.sh` writes the two three-curve leakage figures
-and a joint comparison. To draw just these figures from explicit catalogs:
+`fourth_worstpsf`), `run_all.sh` writes the two three-curve leakage figures. To draw just these figures from explicit catalogs:
 
 ```sh
 python results/psf_leakage.py --fits evaluations/fourth.fits \
@@ -424,8 +440,7 @@ python results/psf_leakage.py --fits evaluations/fourth.fits \
   --format pdf --out output/paper/psf_leakage_distribution
 ```
 
-Copy `psf_leakage_distribution.pdf`, `worstpsf/psf_leakage_distribution.pdf`,
-and `psf_ellipticity_corner.pdf` from the output directory to the corresponding
+Copy `psf_leakage_distribution.pdf` and `worstpsf/psf_leakage_distribution.pdf` from the output directory to the corresponding
 paths under the manuscript's `figures/`. Each zero-shear catalog row contributes
 one PSF pair after every ring orientation has passed the common leakage selection.
 The gray histogram in each leakage panel is scaled to its own peak; it has no
@@ -433,8 +448,7 @@ shear units. The paired corner plot uses common bins and divides each field's
 counts by its own sample size. Its Pearson coefficients describe these selected
 evaluation samples, not the training catalogs or independent draws from the sky.
 
-To regenerate **only** the corner plot after both leakage PDFs have been written,
-use the same catalogs and selection as the leakage fits:
+For internal validation, generate the corner plot independently from the same catalogs:
 
 ```bash
 python results/psf_corner.py --runs ../ShearNet/runs/unit_tests --out output/paper/psf_ellipticity_corner.pdf

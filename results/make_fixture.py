@@ -101,6 +101,11 @@ def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HD
                             psf_flags=np.zeros(rows, np.int32),
                             s2n_stamp=s2n0[catalog_row] * 4.0)}
 
+    # Known physical scalars on every stamp; use the injection's pre-PSF radius.
+    flux = 100 * s2n0[catalog_row]
+    hlr = np.sqrt(np.log(2) * T0[catalog_row])
+    tables["TRUTH"].update(flux_model=flux, hlr=hlr)
+
     for est, table in (("ngmix", "NGMIX"), ("shearnet", "SHEARNET")):
         p = TRUTH[est]
         nu = noise[est][rotation_id, catalog_row]
@@ -118,6 +123,9 @@ def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HD
             shift[component] = sign * STEP * p["rho"]
             cols[f"g_{t}"] = cols["g_noshear"] + shift
             cols[f"flags_{t}"] = np.zeros(rows, np.int32)
+        cols["flux_original"] = flux * (1 + nu[:, 0])
+        if est == "shearnet":
+            cols["hlr_original"] = hlr * (1 + nu[:, 1])
         if est == "ngmix":
             for t in ("original",) + METACAL:
                 cols[f"T_{t}"] = T0[catalog_row]
@@ -143,6 +151,10 @@ def build(n: int, seed: int = 0, shearnet_m: float = 0.0, kappa=None) -> fits.HD
         hdus.append(fits.BinTableHDU.from_columns(
             [fits.Column(name=k, array=v, format=_fmt(v)) for k, v in cols.items()],
             name=name))
+    config = "evaluation:\n  ngmix:\n    gal_model: gauss\n"
+    hdus.append(fits.BinTableHDU.from_columns([
+        fits.Column(name="key", array=["evaluation"], format="10A"),
+        fits.Column(name="value", array=[config], format=f"{len(config)}A")], name="CONFIG"))
     hdus.append(fits.BinTableHDU.from_columns([
         fits.Column(name="scene_id", array=np.arange(S), format="K"),
         fits.Column(name="name", array=np.array([s[0] for s in SCENES]), format="10A"),

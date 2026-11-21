@@ -39,7 +39,7 @@ usage() {
 
 Options:
   --go                  actually run (default is a dry run)
-  --fits PATH           the fiducial (UT4) catalog: Table 2, Figures 3 and 5
+  --fits PATH           the fiducial (UT4) catalog: Table 2, Figures 3, 5 and 6
                         (default: the fourth unit test under --runs)
   --abell3411 FITS      Abell 3411 UT4; defaults to fourth_worstpsf under --runs
   --runs DIR            the four unit-test catalogs: Figure 4
@@ -50,7 +50,7 @@ Options:
   -h, --help            this
 
 Figure 2 is drawn separately with psf/psf_em5.py --config fourth_worstpsf.yaml. The paired leakage
-plots and PSF ellipticity corner plot require both UT4 catalogs.
+plots require both UT4 catalogs. Figure 6 needs only fiducial UT4.
 USAGE
 }
 
@@ -117,6 +117,7 @@ echo
 DELIVERABLES=(
     "tab:response-diag|results|response_diagnostics.py|--out $OUTDIR/tab_response_diag.tex|cut"
     "fig:response_snr|results|response_vs_snr.py|--out $OUTDIR/response_vs_snr.pdf|"
+    "fig:flux-hlr-residuals|results|flux_hlr_residuals.py|--out $OUTDIR/flux_hlr_residuals.pdf|cut"
     "tab:timing|results|timing_table.py|--out $OUTDIR/tab_timing.tex|"
 )
 
@@ -151,7 +152,7 @@ if [[ -n "$FITS" ]]; then
         run "$label" "$dir" "$script" "${args[@]}"
     done
     if [[ -n "$ABELL" ]]; then
-        run "fig:psf-leakage + corner" results psf_leakage.py --fits "$FITS" \
+        run "fig:psf-leakage" results psf_leakage.py --fits "$FITS" \
             --abell3411 "$ABELL" --rpsf paper+off "${CUT_ARGS[@]}" --out "$OUTDIR/psf_leakage_distribution"
     else
         run "fig:psf-leakage" results psf_leakage.py --fits "$FITS" "${CUT_ARGS[@]}" --out "$OUTDIR/psf_leakage"

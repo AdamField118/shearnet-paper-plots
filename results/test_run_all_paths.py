@@ -99,14 +99,14 @@ def test_the_cut_reaches_every_deliverable_except_figure_3(tmp_path):
         assert result.returncode == 0, result.stderr
         seen = set()
         for line in result.stdout.splitlines():
-            for label in ("tab:response-diag", "fig:psf-leakage", "fig:unit-test-bias"):
+            for label in ("tab:response-diag", "fig:psf-leakage", "fig:unit-test-bias", "fig:flux-hlr-residuals"):
                 if line.strip().startswith(label):
                     seen.add(label)
                     assert expected in line, f"{label} runs without the cut: {line}"
             if line.strip().startswith("fig:response_snr"):
                 seen.add("fig:response_snr")
                 assert "--cut" not in line, f"Figure 3 must never be cut: {line}"
-        assert len(seen) == 4, seen
+        assert len(seen) == 5, seen
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash absent")
@@ -171,6 +171,7 @@ def test_paired_catalogs_use_three_curves_and_the_same_cut(tmp_path):
         (tmp_path / f"{name}.fits").touch()
     result = _dry_run("--runs", str(tmp_path), "--min-s2n", "15", cwd=tmp_path)
     assert result.returncode == 0, result.stderr
+    assert "corner" not in result.stdout
     line = next(line for line in result.stdout.splitlines() if "fig:psf-leakage" in line)
     for arg in ("fourth.fits", "--abell3411", "fourth_worstpsf.fits", "--rpsf paper+off",
                 "--cut metacal --min-s2n 15", "/psf_leakage_distribution"):

@@ -71,7 +71,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from catalog import DISPLAY_NAME, Catalog  # noqa: E402
-from psf_distribution import add_histograms, corner_comparison
+from psf_distribution import add_histograms
 from paper_labels import label_psf_leakage  # noqa: E402
 from shear_stats import (PSF_CORRECTED, Sample, calibrated_leakage_inputs,  # noqa: E402
                          cut_from_name, leakage_inputs)
@@ -194,8 +194,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument("--abell3411", metavar="FITS", help="also plot Abell 3411 under worstpsf/ "
-                   "and compare the two selected PSF populations in psf_ellipticity_corner")
+    p.add_argument("--abell3411", metavar="FITS", help="also plot Abell 3411 under worstpsf/")
     p.add_argument("--fits", required=True, help="shearnet-eval catalog")
     p.add_argument(
         "--estimators", nargs=2, default=["shearnet", "ngmix"], metavar=("A", "B"),
@@ -242,20 +241,15 @@ def main(argv=None):
         return
 
     # All catalog arrays and the fit/plot workspaces die with their worker.
-    # The parent receives only the two ellipticity columns (about 1.5 MiB/field).
     from concurrent.futures import ProcessPoolExecutor
     from multiprocessing import get_context
 
     fields = ((args.fits, stem, args.panel_dir),
               (args.abell3411, stem.parent / "worstpsf" / stem.name,
                Path(args.panel_dir) / "worstpsf" if args.panel_dir else None))
-    samples = []
     for path, out, panels in fields:
         with ProcessPoolExecutor(max_workers=1, mp_context=get_context("spawn")) as worker:
-            samples.append(worker.submit(_plot_field, path, args, out, panels).result())
-    with plt.rc_context({"font.size": 10, "axes.labelsize": 11, "xtick.labelsize": 9,
-                         "ytick.labelsize": 9}):
-        _save(corner_comparison(*samples), stem.parent / "psf_ellipticity_corner", args)
+            worker.submit(_plot_field, path, args, out, panels).result()
 
 
 def _plot_field(path, args, stem, panel_dir):
@@ -342,7 +336,7 @@ def _draw_catalog(catalog, args, stem, panel_dir):
             histograms = [np.histogram(values, bins=40) for values in pairs.T]
             fig = paper_comparison(components, histograms, [est for est, _ in curves])
             _save(fig, stem, args)
-            return pairs
+            return
 
         plot_psf_leakage_comparison(
             str(panel_files[0]), str(panel_files[1]),
@@ -363,7 +357,6 @@ def _draw_catalog(catalog, args, stem, panel_dir):
             ax.legend(loc="lower center", bbox_to_anchor=(.5, 1.01), frameon=False,
                       fontsize=14, borderaxespad=0, labelspacing=.15, handlelength=2)
         _save(fig, stem, args)
-        return pairs
     finally:
         if tmp is not None:
             tmp.cleanup()
